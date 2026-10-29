@@ -62,24 +62,37 @@ def sort_playlist(
     "already_present", "review", "lookup_failed" or "add_error". playlist is the target for
     "added", "already_present" and "add_error", else None. error is set only for "add_error".
     """
-    if should_stop is not None or on_done is not None:
-        raise NotImplementedError("should_stop and on_done are not implemented yet")
     report = Report()
     tracks = music.get_tracks(playlist)
     existing = set(music.list_playlists())
     # Persistent IDs in each target playlist, loaded on first use and kept up to date.
     members: dict[str, set[str]] = {}
 
+    def done(
+        track: Track,
+        resolution: Resolution,
+        status: Status,
+        target: Optional[str] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        if on_done is not None:
+            on_done(track, resolution, status, target, error)
+
     for i, track in enumerate(tracks, 1):
+        if should_stop is not None and should_stop():
+            report.cancelled = True
+            break
         if on_progress is not None:
             on_progress(i, len(tracks), track)
         resolution = resolve(track.artist, track.name, sources, cache, recheck)
         report.resolutions.append((track, resolution))
         if resolution.lookup_failed:
             report.lookup_failed.append(track)
+            done(track, resolution, "lookup_failed")
             continue
         if resolution.tuning is None:
             report.review.append(track)
+            done(track, resolution, "review")
             continue
 
         target = resolution.tuning.playlist_name
@@ -94,14 +107,17 @@ def sort_playlist(
 
         if track.persistent_id in members[target]:
             report.already_present.setdefault(target, []).append(track)
+            done(track, resolution, "already_present", target)
             continue
         if not dry_run:
             try:
                 music.add_track(target, track.persistent_id)
             except MusicError as e:
                 report.add_errors.append((track, target, str(e)))
+                done(track, resolution, "add_error", target, str(e))
                 continue
         members[target].add(track.persistent_id)
         report.added.setdefault(target, []).append(track)
+        done(track, resolution, "added", target)
 
     return report
