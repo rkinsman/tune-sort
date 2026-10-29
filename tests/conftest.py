@@ -27,12 +27,15 @@ def fixture_text(rel: str) -> str:
     return (FIXTURES / rel).read_text(encoding="utf-8")
 
 
-def T(text: str) -> Tuning:
+def T(text: str, instrument: str = "bass") -> Tuning:
     """Build a Tuning from space-separated note names (lowest first).
 
     Deliberately independent of tune_sort.tuning's parsers.
     """
-    return Tuning(tuple(_PC[n.upper()] for n in text.split()))
+    pcs = tuple(_PC[n.upper()] for n in text.split())
+    if instrument == "bass":
+        return Tuning(pcs)
+    return Tuning(pcs, instrument)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------- UG builders
@@ -176,9 +179,10 @@ def make_match(
     exact: bool = True,
     artist: str = "Tool",
     title: str = "Schism",
+    instrument: str = "bass",
 ) -> Match:
     return Match(
-        tuning=T(tuning_text),
+        tuning=T(tuning_text, instrument),
         source=source,
         url="https://example.test/" + source,
         matched_artist=artist,
@@ -216,5 +220,14 @@ def cache(tmp_path: Path):  # type: ignore[no-untyped-def]
     from tune_sort.cache import Cache
 
     c = Cache(tmp_path / "cache" / "c.db")
+    yield c
+    c.close()
+
+
+@pytest.fixture
+def guitar_cache(tmp_path: Path):  # type: ignore[no-untyped-def]
+    from tune_sort.cache import Cache
+
+    c = Cache(tmp_path / "gcache" / "c.db", "guitar")
     yield c
     c.close()

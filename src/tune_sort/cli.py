@@ -3,7 +3,16 @@
   tune-sort playlists
       Print each playlist name on its own line.
 
-  tune-sort sort PLAYLIST [--dry-run] [--source both|ug|songsterr] [--review/--no-review]
+  tune-sort bass sort|review|set ...
+  tune-sort guitar sort|review|set ...
+      The commands below, for one instrument. Each instrument has its own cache entries
+      and review queue, its own playlists ("Bass – …" or "Guitar – …") and its own
+      sources (see tune_sort.sources). Usage below omits the instrument: "sort PLAYLIST"
+      means "tune-sort bass sort PLAYLIST" or "tune-sort guitar sort PLAYLIST".
+      In prompts the example tuning is "(e.g. Drop D or B E A D G)" for bass and
+      "(e.g. Drop D or D A D G B E)" for guitar.
+
+  sort PLAYLIST [--dry-run] [--source both|ug|songsterr] [--review/--no-review]
       Resolve each track and print one line per track:
           "<artist> – <title> → <playlist name> (<source>)"  or
           "<artist> – <title> → needs review"
@@ -21,7 +30,7 @@
       again with the same --dry-run and --source, printing the same per-track lines and
       summary, so the answered songs are added to their playlists.
 
-  tune-sort review
+  review
       For each queued song print "<artist> – <title>", then numbered candidates
       "  <i>) <tuning name> (<notes>) → <playlist name> (<source>: <matched artist> – "
       "<matched title>)", where <notes> is Tuning.notes; the " (<notes>)" part is left out
@@ -36,7 +45,7 @@
       An answer that isn't understood prints a message and asks again.
       Prints "Nothing to review." when the queue is empty.
 
-  tune-sort set ARTIST TITLE TUNING
+  set ARTIST TITLE TUNING
       Store a confirmed "manual" entry and print
       "Set <artist> – <title> to <tuning name> (<playlist name>)".
       Exits 1 with a message if TUNING isn't understood.
@@ -65,10 +74,10 @@ from tune_sort.matching import normalise_artist, normalise_title
 from tune_sort.music import Music, MusicError, Track
 from tune_sort.sorter import Report, sort_playlist
 from tune_sort.sources import Source
-from tune_sort.tuning import Tuning, TuningParseError, parse_name
+from tune_sort.tuning import INSTRUMENTS, Instrument, Tuning, TuningParseError, parse_name
 
-# Given "both", "ug" or "songsterr", returns the sources to ask, in order.
-SourcesFactory = Callable[[str], list[Source]]
+# Given the instrument and "both", "ug" or "songsterr", returns the sources to ask, in order.
+SourcesFactory = Callable[[Instrument, str], list[Source]]
 
 
 class SourceChoice(StrEnum):
@@ -82,7 +91,7 @@ CACHE_OPTION = typer.Option(
 )
 
 
-def default_sources(which: str) -> list[Source]:
+def default_sources(instrument: Instrument, which: str) -> list[Source]:
     from tune_sort.http import make_fetch
     from tune_sort.sources.songsterr import Songsterr
     from tune_sort.sources.ultimate_guitar import UltimateGuitar
@@ -90,9 +99,9 @@ def default_sources(which: str) -> list[Source]:
     fetch = make_fetch()
     chosen: list[Source] = []
     if which in ("both", "ug"):
-        chosen.append(UltimateGuitar(fetch))
+        chosen.append(UltimateGuitar(fetch, instrument))
     if which in ("both", "songsterr"):
-        chosen.append(Songsterr(fetch))
+        chosen.append(Songsterr(fetch, instrument))
     return chosen
 
 
@@ -106,6 +115,20 @@ def make_app(music: Callable[[], Music], sources: SourcesFactory) -> typer.Typer
         for name in music().list_playlists():
             typer.echo(name)
 
+    for instrument in INSTRUMENTS:
+        app.add_typer(
+            _instrument_app(instrument, music, sources),
+            name=instrument,
+            help=f"Sort, review and set {instrument} tunings.",
+        )
+    return app
+
+
+def _instrument_app(
+    instrument: Instrument, music: Callable[[], Music], sources: SourcesFactory
+) -> typer.Typer:
+    app = typer.Typer(no_args_is_help=True)
+
     @app.command()
     def sort(
         playlist: str,
@@ -116,10 +139,11 @@ def make_app(music: Callable[[], Music], sources: SourcesFactory) -> typer.Typer
         ),
         cache_path: Path = CACHE_OPTION,
     ) -> None:
-        """Sort PLAYLIST's songs into one playlist per bass tuning."""
-        cache = Cache(cache_path)
+        """Sort PLAYLIST's songs into one playlist per tuning."""
+        cache = Cache(cache_path, instrument)
         try:
-            report = _sort_and_print(music(), playlist, sources(source.value), cache, dry_run)
+            chosen = sources(instrument, source.value)
+            report = _sort_and_print(music(), playlist, chosen, cache, dry_run)
             if not report.review:
                 return
             if review is None:
@@ -130,14 +154,14 @@ def make_app(music: Callable[[], Music], sources: SourcesFactory) -> typer.Typer
             items = [i for i in cache.review_items() if _song_key(i.artist, i.title) in keys]
             if _review_items(cache, items):
                 typer.echo("")
-                _sort_and_print(music(), playlist, sources(source.value), cache, dry_run)
+                _sort_and_print(music(), playlist, chosen, cache, dry_run)
         finally:
             cache.close()
 
     @app.command("review")
     def review_command(cache_path: Path = CACHE_OPTION) -> None:
         """Answer the songs that couldn't be sorted automatically."""
-        cache = Cache(cache_path)
+        cache = Cache(cache_path, instrument)
         try:
             items = cache.review_items()
             if not items:
@@ -151,11 +175,11 @@ def make_app(music: Callable[[], Music], sources: SourcesFactory) -> typer.Typer
     def set_tuning(artist: str, title: str, tuning: str, cache_path: Path = CACHE_OPTION) -> None:
         """Set a song's tuning by hand, e.g. set "Tool" "Schism" "Drop D"."""
         try:
-            parsed = parse_name(tuning)
+            parsed = parse_name(tuning, instrument)
         except TuningParseError as e:
             typer.echo(f"Error: tuning not understood: {tuning!r} ({e})", err=True)
             raise typer.Exit(1) from e
-        cache = Cache(cache_path)
+        cache = Cache(cache_path, instrument)
         try:
             cache.put(artist, title, Entry(parsed, "manual", confirmed=True))
         finally:
@@ -165,7 +189,7 @@ def make_app(music: Callable[[], Music], sources: SourcesFactory) -> typer.Typer
     return app
 
 
-TUNING_EXAMPLES = "(e.g. Drop D or B E A D G)"
+TUNING_EXAMPLES = {"bass": "(e.g. Drop D or B E A D G)", "guitar": "(e.g. Drop D or D A D G B E)"}
 
 
 def _sort_and_print(
@@ -217,7 +241,9 @@ def _review_items(cache: Cache, items: list[ReviewItem]) -> int:
                 f"  {i}) {_with_notes(m.tuning)} → {m.tuning.playlist_name} "
                 f"({m.source}: {m.matched_artist} – {m.matched_title})"
             )
-        chosen = _ask_tuning(len(item.candidates), [m.tuning for m in item.candidates])
+        chosen = _ask_tuning(
+            len(item.candidates), [m.tuning for m in item.candidates], cache.instrument
+        )
         if chosen == "q":
             break
         if isinstance(chosen, Tuning):
@@ -251,11 +277,12 @@ def _described(tuning: Tuning) -> str:
     return f"{tuning.name} ({tuning.playlist_name})"
 
 
-def _ask_tuning(count: int, candidates: list[Tuning]) -> Optional[object]:
+def _ask_tuning(count: int, candidates: list[Tuning], instrument: Instrument) -> Optional[object]:
     """Prompt until the answer is a candidate number, a tuning, "s" (None) or "q"."""
     while True:
         choose = f"Choose 1-{count}, type a tuning" if count else "Type a tuning"
-        answer = str(typer.prompt(f"{choose} {TUNING_EXAMPLES}, s to skip, q to quit")).strip()
+        examples = TUNING_EXAMPLES[instrument]
+        answer = str(typer.prompt(f"{choose} {examples}, s to skip, q to quit")).strip()
         lowered = answer.lower()
         if lowered == "s":
             return None
@@ -264,7 +291,7 @@ def _ask_tuning(count: int, candidates: list[Tuning]) -> Optional[object]:
         if answer.isdigit() and 1 <= int(answer) <= count:
             return candidates[int(answer) - 1]
         try:
-            return parse_name(answer)
+            return parse_name(answer, instrument)
         except TuningParseError:
             typer.echo(f"Not understood: {answer!r}. Try e.g. 1, Drop D, E A D G, s or q.")
 

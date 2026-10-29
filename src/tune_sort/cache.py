@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 from tune_sort import matching
 from tune_sort.sources import Match
-from tune_sort.tuning import Tuning, from_pitch_classes
+from tune_sort.tuning import Instrument, Tuning, from_pitch_classes
 
 DEFAULT_PATH = Path.home() / ".cache" / "tune-sort" / "tunings.db"
 # Where the cache lived before the project was renamed from bass-tuning-sorter.
@@ -59,8 +59,16 @@ def migrate_legacy_cache(legacy: Path = LEGACY_PATH, new: Path = DEFAULT_PATH) -
     return True
 
 
-def _key(artist: str, title: str) -> str:
-    return matching.normalise_artist(artist) + "\x1f" + matching.normalise_title(title)
+def _key(artist: str, title: str, instrument: Instrument) -> str:
+    key = matching.normalise_artist(artist) + "\x1f" + matching.normalise_title(title)
+    # Bass keys keep the format earlier, bass-only versions wrote.
+    return key if instrument == "bass" else f"{instrument}\x1e{key}"
+
+
+def _key_instrument(key: str) -> str:
+    # Compared by prefix, not by recomputing the key: normalisation may have changed
+    # since the row was written.
+    return key.split("\x1e", 1)[0] if "\x1e" in key else "bass"
 
 
 def _match_to_json(m: Match) -> dict[str, Any]:
@@ -74,9 +82,9 @@ def _match_to_json(m: Match) -> dict[str, Any]:
     }
 
 
-def _match_from_json(d: dict[str, Any]) -> Match:
+def _match_from_json(d: dict[str, Any], instrument: Instrument) -> Match:
     return Match(
-        tuning=from_pitch_classes(d["tuning"]),
+        tuning=from_pitch_classes(d["tuning"], instrument),
         source=d["source"],
         url=d["url"],
         matched_artist=d["matched_artist"],
@@ -92,9 +100,15 @@ class Cache:
 
     Tunings read back (entries and review candidates) get the same guitar-tuning
     reduction as tuning.parse_note_names, so a 6-string guitar tuning stored by an
-    older version, e.g. E A D G B E, comes back as its lowest four strings."""
+    older version, e.g. E A D G B E, comes back as its lowest four strings.
 
-    def __init__(self, path: Path = DEFAULT_PATH) -> None:
+    A Cache is opened for one instrument. Bass and guitar entries and review queues in the
+    same file are independent: the same song can have a bass and a guitar entry. Files
+    written by earlier versions (bass only) read as bass. The guitar-tuning reduction on
+    read applies to bass only."""
+
+    def __init__(self, path: Path = DEFAULT_PATH, instrument: Instrument = "bass") -> None:
+        self.instrument: Instrument = instrument
         path.parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(str(path))
         self._db.executescript(_SCHEMA)
@@ -102,16 +116,17 @@ class Cache:
     def get(self, artist: str, title: str) -> Optional[Entry]:
         row = self._db.execute(
             "SELECT pitch_classes, source, confirmed FROM tunings WHERE song_key = ?",
-            (_key(artist, title),),
+            (self._key(artist, title),),
         ).fetchone()
         if row is None:
             return None
-        return Entry(from_pitch_classes(json.loads(row[0])), row[1], bool(row[2]))
+        tuning = from_pitch_classes(json.loads(row[0]), self.instrument)
+        return Entry(tuning, row[1], bool(row[2]))
 
     def put(self, artist: str, title: str, entry: Entry) -> None:
         """Store an entry, replacing any existing one, and remove the song from the
         review queue."""
-        key = _key(artist, title)
+        key = self._key(artist, title)
         with self._db:
             self._db.execute(
                 "INSERT OR REPLACE INTO tunings VALUES (?, ?, ?, ?)",
@@ -126,7 +141,7 @@ class Cache:
 
     def add_review(self, artist: str, title: str, candidates: list[Match]) -> None:
         """Queue a song for review, replacing its candidates if it is already queued."""
-        key = _key(artist, title)
+        key = self._key(artist, title)
         blob = json.dumps([_match_to_json(m) for m in candidates])
         with self._db:
             updated = self._db.execute(
@@ -142,11 +157,16 @@ class Cache:
     def review_items(self) -> list[ReviewItem]:
         """Queued songs in the order they were first queued."""
         rows = self._db.execute(
-            "SELECT artist, title, candidates FROM review ORDER BY queued_order"
+            "SELECT song_key, artist, title, candidates FROM review ORDER BY queued_order"
         ).fetchall()
         return [
-            ReviewItem(a, t, tuple(_match_from_json(d) for d in json.loads(c))) for a, t, c in rows
+            ReviewItem(a, t, tuple(_match_from_json(d, self.instrument) for d in json.loads(c)))
+            for key, a, t, c in rows
+            if _key_instrument(key) == self.instrument
         ]
+
+    def _key(self, artist: str, title: str) -> str:
+        return _key(artist, title, self.instrument)
 
     def close(self) -> None:
         self._db.close()
