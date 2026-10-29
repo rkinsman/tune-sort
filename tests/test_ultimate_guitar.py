@@ -4,7 +4,8 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-from conftest import (
+
+from tests.conftest import (
     FakeFetch,
     T,
     fixture_text,
@@ -13,7 +14,6 @@ from conftest import (
     ug_search_page,
     ug_tab_page,
 )
-
 from tune_sort.sources import FetchError, SourceError
 from tune_sort.sources.ultimate_guitar import (
     MAX_PAGES_PER_TYPE,

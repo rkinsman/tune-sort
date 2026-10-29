@@ -6,8 +6,8 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-from conftest import FakeFetch, store_page, ug_result, ug_search_page, ug_tab_page
 
+from tests.conftest import FakeFetch, store_page, ug_result, ug_search_page, ug_tab_page
 from tune_sort.sources import FetchError, SourceError
 from tune_sort.sources.songsterr import SEARCH_URL as SONGSTERR_SEARCH_URL
 from tune_sort.sources.songsterr import Songsterr

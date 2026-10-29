@@ -1,9 +1,9 @@
 """CLI: --recheck, lookup failures, add errors, EOF at the review prompt."""
 from __future__ import annotations
 
-from conftest import FakeMusic, FakeSource, T, failing_source, make_match, make_track
 from typer.testing import CliRunner
 
+from tests.conftest import FakeMusic, FakeSource, T, failing_source, make_match, make_track
 from tune_sort.cache import Cache, Entry
 from tune_sort.cli import make_app
 from tune_sort.sources import SourceError

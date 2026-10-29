@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from conftest import FakeMusic, FakeSource, make_match, make_track
-
+from tests.conftest import FakeMusic, FakeSource, make_match, make_track
 from tune_sort.sorter import sort_playlist
 
 DASH = "–"

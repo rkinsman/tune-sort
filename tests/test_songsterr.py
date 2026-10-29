@@ -4,8 +4,8 @@ import json
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-from conftest import FakeFetch, T, fixture_text
 
+from tests.conftest import FakeFetch, T, fixture_text
 from tune_sort.sources import FetchError, SourceError
 from tune_sort.sources.songsterr import SEARCH_URL, Songsterr, search_url
 

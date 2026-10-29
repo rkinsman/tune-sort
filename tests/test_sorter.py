@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from conftest import FakeMusic, FakeSource, make_match, make_track
 
+from tests.conftest import FakeMusic, FakeSource, make_match, make_track
 from tune_sort.cache import Entry
 from tune_sort.music import MusicError
 from tune_sort.sorter import sort_playlist

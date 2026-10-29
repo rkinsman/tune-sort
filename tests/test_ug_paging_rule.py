@@ -4,8 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
-from conftest import T, store_page, ug_result, ug_tab_page
-
+from tests.conftest import T, store_page, ug_result, ug_tab_page
 from tune_sort.sources import FetchError
 from tune_sort.sources.ultimate_guitar import SEARCH_URL, UltimateGuitar
 
