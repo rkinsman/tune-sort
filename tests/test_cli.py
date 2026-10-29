@@ -16,6 +16,7 @@ B5_PLAYLIST = "Bass 5-String %s B Standard" % DASH
 
 A = make_track("A", "Tool", "Schism")
 B = make_track("B", "Nobody", "Nothing")
+C = make_track("C", "Opeth", "Deliverance")
 
 runner = CliRunner()
 
@@ -109,6 +110,116 @@ def test_sort_source_option(cache_path):
         FakeMusic({"Road": [A]}), ["sort", "Road", "--source", "songsterr"], cache_path
     )
     assert f.requested == ["songsterr"]
+
+
+# ------------------------------------------------------ sort offers to review at the end
+
+
+def test_sort_asks_to_review_when_songs_need_it(cache_path):
+    music = FakeMusic({"Road": [A, B]})
+    result, _ = invoke(music, ["sort", "Road"], cache_path, input="n\n")
+    assert result.exit_code == 0, result.output
+    assert "Review 1 songs now?" in result.output
+
+
+def test_sort_review_question_counts_songs(cache_path):
+    music = FakeMusic({"Road": [A, B, C]})
+    result, _ = invoke(music, ["sort", "Road"], cache_path, input="n\n")
+    assert "Review 2 songs now?" in result.output
+
+
+def test_sort_never_asks_when_nothing_needs_review(cache_path):
+    music = FakeMusic({"Road": [A]})
+    result, _ = invoke(music, ["sort", "Road"], cache_path)
+    assert result.exit_code == 0
+    assert "songs now?" not in result.output
+
+
+def test_sort_answer_no_does_not_review(cache_path):
+    music = FakeMusic({"Road": [A, B]})
+    result, _ = invoke(music, ["sort", "Road"], cache_path, input="n\n")
+    assert "Type a tuning" not in result.output
+    assert music.playlists[DROP_D] == [A]
+    assert _entry(cache_path, "Nobody", "Nothing") is None
+    assert result.output.count("Already present:") == 1
+
+
+def test_sort_eof_counts_as_no(cache_path):
+    music = FakeMusic({"Road": [A, B]})
+    result, _ = invoke(music, ["sort", "Road"], cache_path)
+    assert result.exit_code == 0, result.output
+    assert "Type a tuning" not in result.output
+    assert _entry(cache_path, "Nobody", "Nothing") is None
+
+
+def test_sort_answer_yes_reviews_and_resorts(cache_path):
+    music = FakeMusic({"Road": [A, B]})
+    result, _ = invoke(music, ["sort", "Road"], cache_path, input="y\nDrop D\n")
+    assert result.exit_code == 0, result.output
+    out = result.output
+    assert "Review 1 songs now?" in out
+    assert "Set Nobody %s Nothing to Drop D (%s)" % (DASH, DROP_D) in out
+    assert music.playlists[DROP_D] == [A, B]
+    assert out.count("Added 1 to %s" % DROP_D) == 2
+    assert out.count("Already present:") == 2
+    assert _entry(cache_path, "Nobody", "Nothing") == Entry(T("D A D G"), "manual", True)
+
+
+def test_sort_review_flag_skips_question(cache_path):
+    music = FakeMusic({"Road": [A, B]})
+    result, _ = invoke(music, ["sort", "Road", "--review"], cache_path, input="Drop D\n")
+    assert result.exit_code == 0, result.output
+    assert "songs now?" not in result.output
+    assert music.playlists[DROP_D] == [A, B]
+    assert result.output.count("Added 1 to %s" % DROP_D) == 2
+
+
+def test_sort_no_review_flag_never_prompts(cache_path):
+    music = FakeMusic({"Road": [A, B]})
+    result, _ = invoke(music, ["sort", "Road", "--no-review"], cache_path, input="y\nDrop D\n")
+    assert result.exit_code == 0, result.output
+    assert "songs now?" not in result.output
+    assert "Type a tuning" not in result.output
+    assert music.playlists[DROP_D] == [A]
+    assert _entry(cache_path, "Nobody", "Nothing") is None
+
+
+def test_sort_review_all_skipped_does_not_resort(cache_path):
+    music = FakeMusic({"Road": [A, B]})
+    result, _ = invoke(music, ["sort", "Road", "--review"], cache_path, input="s\n")
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Already present:") == 1
+    assert result.output.count("Added 1 to") == 1
+    assert _entry(cache_path, "Nobody", "Nothing") is None
+
+
+def test_sort_review_only_offers_this_playlists_songs(cache_path):
+    other = FakeMusic({"Other": [C]})
+    invoke(other, ["sort", "Other", "--no-review"], cache_path)
+    assert ("Opeth", "Deliverance") in _queued(cache_path)
+
+    music = FakeMusic({"Road": [A, B]})
+    result, _ = invoke(music, ["sort", "Road"], cache_path, input="y\ns\n")
+    assert result.exit_code == 0, result.output
+    assert "Review 1 songs now?" in result.output
+    assert "Opeth" not in result.output
+    assert ("Opeth", "Deliverance") in _queued(cache_path)
+
+
+def test_sort_dry_run_review_leaves_music_unchanged(cache_path):
+    music = FakeMusic({"Road": [A, B]})
+    result, _ = invoke(
+        music, ["sort", "Road", "--dry-run", "--review"], cache_path, input="Drop D\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert music.ensure_calls == []
+    assert music.add_calls == []
+    assert list(music.playlists) == ["Road"]
+    assert "Would add" in result.output
+    assert "Added " not in result.output
+    assert _entry(cache_path, "Nobody", "Nothing") == Entry(T("D A D G"), "manual", True)
+    # The re-sort sees the answered song too.
+    assert "Would add 2 to %s" % DROP_D in result.output
 
 
 def _queue(cache_path, items):
@@ -236,6 +347,15 @@ def test_review_typed_five_string_forms(cache_path, answer):
     assert _queued(cache_path) == []
 
 
+def test_review_typed_guitar_tuning_reduced_to_bass(cache_path):
+    _queue(cache_path, [("Tool", "Schism", CANDS)])
+    result, _ = invoke(FakeMusic(), ["review"], cache_path, input="EADGBE\n")
+    assert result.exit_code == 0, result.output
+    e = _entry(cache_path, "Tool", "Schism")
+    assert e == Entry(T("E A D G"), "manual", True)
+    assert "Set Tool %s Schism to E Standard (Bass %s E Standard)" % (DASH, DASH) in result.output
+
+
 def test_review_invalid_then_valid(cache_path):
     _queue(cache_path, [("Tool", "Schism", CANDS)])
     result, _ = invoke(FakeMusic(), ["review"], cache_path, input="banana\nDrop C\n")
@@ -268,6 +388,13 @@ def test_set(cache_path):
     assert result.exit_code == 0, result.output
     assert "Set Tool %s Schism to Drop D (%s)" % (DASH, DROP_D) in result.output
     assert _entry(cache_path, "Tool", "Schism") == Entry(T("D A D G"), "manual", True)
+
+
+def test_set_guitar_tuning_reduced(cache_path):
+    result, _ = invoke(FakeMusic(), ["set", "Tool", "Schism", "EADGBE"], cache_path)
+    assert result.exit_code == 0, result.output
+    assert _entry(cache_path, "Tool", "Schism") == Entry(T("E A D G"), "manual", True)
+    assert "E Standard (Bass %s E Standard)" % DASH in result.output
 
 
 def test_set_five_string_prints_playlist(cache_path):

@@ -66,6 +66,13 @@ def test_five_string_bass():
     assert m.tuning.name == "B Standard"
 
 
+def test_bass_track_with_guitar_tuning_reduced_to_four_strings():
+    m, _ = lookup([song(1, [track(33, [64, 59, 55, 50, 45, 40])])])
+    assert m is not None
+    assert m.tuning.string_count == 4
+    assert m.tuning.name == "E Standard"
+
+
 def test_popular_track_bass_preferred():
     m, _ = lookup([song(1, [BASS_STD, GUITAR, BASS_DROP_D], popular=2)])
     assert m.tuning == T("D A D G")

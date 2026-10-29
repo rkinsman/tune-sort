@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 from bass_sort import matching
 from bass_sort.sources import Match
-from bass_sort.tuning import Tuning
+from bass_sort.tuning import Tuning, from_pitch_classes
 
 DEFAULT_PATH = Path.home() / ".cache" / "bass-tuning-sorter" / "tunings.db"
 
@@ -62,7 +62,7 @@ def _match_to_json(m: Match) -> dict[str, Any]:
 
 def _match_from_json(d: dict[str, Any]) -> Match:
     return Match(
-        tuning=Tuning(tuple(d["tuning"])),
+        tuning=from_pitch_classes(d["tuning"]),
         source=d["source"],
         url=d["url"],
         matched_artist=d["matched_artist"],
@@ -74,7 +74,11 @@ def _match_from_json(d: dict[str, Any]) -> Match:
 class Cache:
     """Keyed by normalised artist and title (bass_sort.matching), so "Schism" and
     "Schism (Remastered)" by "Tool" share an entry. Creates the file and parent
-    directories if missing. Data survives reopening the same path."""
+    directories if missing. Data survives reopening the same path.
+
+    Tunings read back (entries and review candidates) get the same guitar-tuning
+    reduction as tuning.parse_note_names, so a 6-string guitar tuning stored by an
+    older version, e.g. E A D G B E, comes back as its lowest four strings."""
 
     def __init__(self, path: Path = DEFAULT_PATH) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -88,7 +92,7 @@ class Cache:
         ).fetchone()
         if row is None:
             return None
-        return Entry(Tuning(tuple(json.loads(row[0]))), row[1], bool(row[2]))
+        return Entry(from_pitch_classes(json.loads(row[0])), row[1], bool(row[2]))
 
     def put(self, artist: str, title: str, entry: Entry) -> None:
         """Store an entry, replacing any existing one, and remove the song from the

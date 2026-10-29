@@ -168,3 +168,75 @@ def test_parse_name(text, pcs):
 def test_parse_name_rejects(text):
     with pytest.raises(TuningParseError):
         parse_name(text)
+
+
+# ------------------------------------------- 6-string guitar tunings reduce to 4 strings
+
+
+@pytest.mark.parametrize(
+    "text,pcs,name",
+    [
+        ("E A D G B E", (4, 9, 2, 7), "E Standard"),
+        ("D A D G B E", (2, 9, 2, 7), "Drop D"),
+        ("Eb Ab Db Gb Bb Eb", (3, 8, 1, 6), "Eb Standard"),
+        ("C# G# C# F# A# D#", (1, 8, 1, 6), "Drop C#"),
+        ("EADGBE", (4, 9, 2, 7), "E Standard"),
+        ("E, A, D, G, B, E", (4, 9, 2, 7), "E Standard"),
+    ],
+)
+def test_parse_note_names_reduces_guitar_tuning(text, pcs, name):
+    t = parse_note_names(text)
+    assert t == Tuning(pcs)
+    assert t.string_count == 4
+    assert t.name == name
+
+
+def test_guitar_tuning_playlist_name():
+    assert parse_note_names("E A D G B E").playlist_name == "Bass %s E Standard" % DASH
+
+
+def test_from_midi_reduces_guitar_tuning():
+    t = from_midi([40, 45, 50, 55, 59, 64])
+    assert t == Tuning((4, 9, 2, 7))
+    assert t.string_count == 4
+    assert t.name == "E Standard"
+
+
+def test_from_midi_drop_d_guitar_tuning_reduces():
+    t = from_midi([38, 45, 50, 55, 59, 64])
+    assert t.string_count == 4
+    assert t.name == "Drop D"
+
+
+def test_six_string_bass_kept():
+    t = parse_note_names("B E A D G C")
+    assert t.string_count == 6
+    assert t.name == "B Standard"
+    assert t.playlist_name == "Bass 6-String %s B Standard" % DASH
+    assert from_midi([23, 28, 33, 38, 43, 48]).string_count == 6
+
+
+def test_six_string_without_major_third_kept():
+    t = parse_note_names("D A D G A D")
+    assert t.string_count == 6
+    assert t == Tuning((2, 9, 2, 7, 9, 2))
+
+
+def test_four_and_five_string_never_reduced():
+    assert parse_note_names("E A D G").string_count == 4
+    assert parse_note_names("B E A D G").string_count == 5
+    assert from_midi([23, 28, 33, 38, 43]).string_count == 5
+
+
+def test_direct_construction_not_reduced():
+    assert Tuning((4, 9, 2, 7, 11, 4)).string_count == 6
+
+
+def test_parse_name_reduces_guitar_tuning():
+    assert parse_name("EADGBE") == Tuning((4, 9, 2, 7))
+    assert parse_name("E A D G B E") == Tuning((4, 9, 2, 7))
+    assert parse_name("D A D G B E").name == "Drop D"
+
+
+def test_parse_name_six_string_standard_still_six():
+    assert parse_name("6-string B Standard").string_count == 6

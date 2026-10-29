@@ -3,13 +3,16 @@ from __future__ import annotations
 import pytest
 from conftest import FakeMusic, FakeSource, make_match, make_track
 
+from bass_sort.cache import Entry
 from bass_sort.music import MusicError
 from bass_sort.sorter import sort_playlist
+from bass_sort.tuning import Tuning
 
 DASH = "–"
 DROP_D = "Bass %s Drop D" % DASH
 EB_STD = "Bass %s Eb Standard" % DASH
 B5 = "Bass 5-String %s B Standard" % DASH
+E_STD = "Bass %s E Standard" % DASH
 
 A = make_track("A", "Tool", "Schism")
 B = make_track("B", "Opeth", "Deliverance")
@@ -136,3 +139,14 @@ def test_empty_playlist(cache):
 def test_missing_playlist_raises(cache):
     with pytest.raises(MusicError):
         sort_playlist(FakeMusic({}), "nope", sources(), cache)
+
+
+def test_old_cached_guitar_tuning_sorts_to_four_string_playlist(cache):
+    # Entry saved by an older version with the full 6-string guitar tuning.
+    cache.put("Tool", "Schism", Entry(Tuning((4, 9, 2, 7, 11, 4)), "ug-bass", False))
+    music = FakeMusic({"P": [A]})
+    report = sort_playlist(music, "P", [FakeSource("s")], cache)
+    assert music.playlists[E_STD] == [A]
+    assert report.added == {E_STD: [A]}
+    assert not any("6-String" in name for name in music.playlists)
+    assert not any("6-String" in name for name in report.added)

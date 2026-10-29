@@ -16,6 +16,7 @@ MIN_STRINGS = 4
 MAX_STRINGS = 6
 FOURTH = 5
 FIFTH = 7
+MAJOR_THIRD = 4  # between a guitar's G and B strings
 
 
 class TuningParseError(ValueError):
@@ -60,11 +61,19 @@ class Tuning:
 def _checked(pcs: list[int]) -> Tuning:
     if not MIN_STRINGS <= len(pcs) <= MAX_STRINGS:
         raise TuningParseError(f"expected {MIN_STRINGS}-{MAX_STRINGS} strings, got {len(pcs)}")
+    if len(pcs) == 6 and (pcs[4] - pcs[3]) % 12 == MAJOR_THIRD:
+        # A guitar tuning: the bass plays the lowest four strings.
+        pcs = pcs[:4]
     return Tuning(tuple(pcs))
 
 
 def parse_note_names(text: str) -> Tuning:
-    """Parse note names listed lowest string first, e.g. "D A D G", "DADG", "Eb Ab Db Gb"."""
+    """Parse note names listed lowest string first, e.g. "D A D G", "DADG", "Eb Ab Db Gb".
+
+    A 6-string guitar tuning (a major third between the 4th and 5th strings, e.g.
+    E A D G B E or D A D G B E) is reduced to its lowest four strings, since the bass
+    plays those: E A D G B E becomes E Standard. A 6-string bass is all fourths and
+    is kept as it is."""
     compact = re.sub(r"[\s,]+", "", text)
     if not compact:
         raise TuningParseError("no notes given")
@@ -85,8 +94,14 @@ def parse_note_names(text: str) -> Tuning:
     return _checked(pcs)
 
 
+def from_pitch_classes(pitch_classes: Iterable[int]) -> Tuning:
+    """Build a tuning from stored pitch classes, applying the guitar-tuning reduction."""
+    return _checked([pc % 12 for pc in pitch_classes])
+
+
 def from_midi(notes: Iterable[int]) -> Tuning:
-    """Build a tuning from MIDI note numbers listed lowest string first."""
+    """Build a tuning from MIDI note numbers listed lowest string first. 6-string guitar
+    tunings are reduced to their lowest four strings, as in parse_note_names."""
     return _checked([n % 12 for n in notes])
 
 

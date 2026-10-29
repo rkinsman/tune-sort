@@ -3,7 +3,7 @@
   bass-sort playlists
       Print each playlist name on its own line.
 
-  bass-sort sort PLAYLIST [--dry-run] [--source both|ug|songsterr]
+  bass-sort sort PLAYLIST [--dry-run] [--source both|ug|songsterr] [--review/--no-review]
       Resolve each track and print one line per track:
           "<artist> – <title> → <playlist name> (<source>)"  or
           "<artist> – <title> → needs review"
@@ -14,6 +14,12 @@
           "Needs review: <n>"
       --source both (default) asks UG then Songsterr. Exits 1 with a message if PLAYLIST
       doesn't exist.
+      If any songs need review, it then asks "Review <n> songs now? [y/N]" (default No).
+      --review skips the question and reviews; --no-review skips the question and doesn't.
+      Reviewing goes through this run's songs that need review, exactly as `review` does
+      (same output and answers). If at least one was answered, the playlist is sorted
+      again with the same --dry-run and --source, printing the same per-track lines and
+      summary, so the answered songs are added to their playlists.
 
   bass-sort review
       For each queued song print "<artist> – <title>", then numbered candidates
@@ -46,9 +52,10 @@ from typing import Optional
 
 import typer
 
-from bass_sort.cache import DEFAULT_PATH, Cache, Entry
+from bass_sort.cache import DEFAULT_PATH, Cache, Entry, ReviewItem
+from bass_sort.matching import normalise_artist, normalise_title
 from bass_sort.music import Music, MusicError
-from bass_sort.sorter import sort_playlist
+from bass_sort.sorter import Report, sort_playlist
 from bass_sort.sources import Source
 from bass_sort.tuning import Tuning, TuningParseError, parse_name
 
@@ -96,36 +103,31 @@ def make_app(music: Callable[[], Music], sources: SourcesFactory) -> typer.Typer
         playlist: str,
         dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change."),
         source: SourceChoice = typer.Option(SourceChoice.both, "--source"),
+        review: Optional[bool] = typer.Option(
+            None, "--review/--no-review", help="Review songs that need it without asking."
+        ),
         cache_path: Path = CACHE_OPTION,
     ) -> None:
         """Sort PLAYLIST's songs into one playlist per bass tuning."""
         cache = Cache(cache_path)
         try:
-            report = sort_playlist(music(), playlist, sources(source.value), cache, dry_run)
-        except MusicError as e:
-            typer.echo(f"Error: {e}", err=True)
-            raise typer.Exit(1) from e
+            report = _sort_and_print(music(), playlist, sources(source.value), cache, dry_run)
+            if not report.review:
+                return
+            if review is None:
+                review = _confirm(f"Review {len(report.review)} songs now?")
+            if not review:
+                return
+            keys = {_song_key(t.artist, t.name) for t in report.review}
+            items = [i for i in cache.review_items() if _song_key(i.artist, i.title) in keys]
+            if _review_items(cache, items):
+                typer.echo("")
+                _sort_and_print(music(), playlist, sources(source.value), cache, dry_run)
         finally:
             cache.close()
 
-        for track, res in report.resolutions:
-            song = f"{track.artist} – {track.name}"
-            if res.tuning is None:
-                typer.echo(f"{song} → needs review")
-            else:
-                typer.echo(f"{song} → {res.tuning.playlist_name} ({res.source})")
-        typer.echo("")
-        created = "Would create playlist" if dry_run else "Created playlist"
-        for name in report.created_playlists:
-            typer.echo(f"{created}: {name}")
-        verb = "Would add" if dry_run else "Added"
-        for name, tracks in report.added.items():
-            typer.echo(f"{verb} {len(tracks)} to {name}")
-        typer.echo(f"Already present: {sum(len(t) for t in report.already_present.values())}")
-        typer.echo(f"Needs review: {len(report.review)}")
-
-    @app.command()
-    def review(cache_path: Path = CACHE_OPTION) -> None:
+    @app.command("review")
+    def review_command(cache_path: Path = CACHE_OPTION) -> None:
         """Answer the songs that couldn't be sorted automatically."""
         cache = Cache(cache_path)
         try:
@@ -133,21 +135,7 @@ def make_app(music: Callable[[], Music], sources: SourcesFactory) -> typer.Typer
             if not items:
                 typer.echo("Nothing to review.")
                 return
-            for item in items:
-                typer.echo(f"\n{item.artist} – {item.title}")
-                if not item.candidates:
-                    typer.echo("  No tunings found.")
-                for i, m in enumerate(item.candidates, 1):
-                    typer.echo(
-                        f"  {i}) {m.tuning.name} ({m.source}: {m.matched_artist} – "
-                        f"{m.matched_title})"
-                    )
-                chosen = _ask_tuning(len(item.candidates), [m.tuning for m in item.candidates])
-                if chosen == "q":
-                    break
-                if isinstance(chosen, Tuning):
-                    cache.put(item.artist, item.title, Entry(chosen, "manual", confirmed=True))
-                    typer.echo(f"Set {item.artist} – {item.title} to {_described(chosen)}")
+            _review_items(cache, items)
         finally:
             cache.close()
 
@@ -170,6 +158,67 @@ def make_app(music: Callable[[], Music], sources: SourcesFactory) -> typer.Typer
 
 
 TUNING_EXAMPLES = "(e.g. Drop D or B E A D G)"
+
+
+def _sort_and_print(
+    music: Music, playlist: str, sources: list[Source], cache: Cache, dry_run: bool
+) -> Report:
+    try:
+        report = sort_playlist(music, playlist, sources, cache, dry_run)
+    except MusicError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from e
+
+    for track, res in report.resolutions:
+        song = f"{track.artist} – {track.name}"
+        if res.tuning is None:
+            typer.echo(f"{song} → needs review")
+        else:
+            typer.echo(f"{song} → {res.tuning.playlist_name} ({res.source})")
+    typer.echo("")
+    created = "Would create playlist" if dry_run else "Created playlist"
+    for name in report.created_playlists:
+        typer.echo(f"{created}: {name}")
+    verb = "Would add" if dry_run else "Added"
+    for name, tracks in report.added.items():
+        typer.echo(f"{verb} {len(tracks)} to {name}")
+    typer.echo(f"Already present: {sum(len(t) for t in report.already_present.values())}")
+    typer.echo(f"Needs review: {len(report.review)}")
+    return report
+
+
+def _review_items(cache: Cache, items: list[ReviewItem]) -> int:
+    """Ask about each item and store the answers. Returns how many were answered."""
+    answered = 0
+    for item in items:
+        typer.echo(f"\n{item.artist} – {item.title}")
+        if not item.candidates:
+            typer.echo("  No tunings found.")
+        for i, m in enumerate(item.candidates, 1):
+            typer.echo(
+                f"  {i}) {m.tuning.name} ({m.source}: {m.matched_artist} – {m.matched_title})"
+            )
+        chosen = _ask_tuning(len(item.candidates), [m.tuning for m in item.candidates])
+        if chosen == "q":
+            break
+        if isinstance(chosen, Tuning):
+            cache.put(item.artist, item.title, Entry(chosen, "manual", confirmed=True))
+            typer.echo(f"Set {item.artist} – {item.title} to {_described(chosen)}")
+            answered += 1
+    return answered
+
+
+def _song_key(artist: str, title: str) -> tuple[str, str]:
+    return normalise_artist(artist), normalise_title(title)
+
+
+def _confirm(question: str) -> bool:
+    """Ask a yes/no question, defaulting to No, and treating end of input as No."""
+    try:
+        return bool(typer.confirm(question, default=False))
+    except (typer.Abort, EOFError):
+        typer.echo("")
+        return False
 
 
 def _described(tuning: Tuning) -> str:
