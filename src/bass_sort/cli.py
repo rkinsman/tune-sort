@@ -17,14 +17,20 @@
 
   bass-sort review
       For each queued song print "<artist> – <title>", then numbered candidates
-      "  <i>) <tuning name> (<source>: <matched artist> – <matched title>)", then prompt.
+      "  <i>) <tuning name> (<source>: <matched artist> – <matched title>)", or
+      "  No tunings found." when there are none, then prompt:
+          "Choose 1-<n>, type a tuning (e.g. Drop D or B E A D G), s to skip, q to quit"
+          "Type a tuning (e.g. Drop D or B E A D G), s to skip, q to quit"  (no candidates)
       An answer is a candidate number, a tuning (anything tuning.parse_name accepts),
-      "s" to skip or "q" to quit. A chosen tuning is stored as a confirmed "manual" entry.
+      "s" to skip or "q" to quit. A typed tuning overrides the candidates. A chosen tuning
+      is stored as a confirmed "manual" entry and confirmed with
+      "Set <artist> – <title> to <tuning name> (<playlist name>)".
       An answer that isn't understood prints a message and asks again.
       Prints "Nothing to review." when the queue is empty.
 
   bass-sort set ARTIST TITLE TUNING
-      Store a confirmed "manual" entry and print "Set <artist> – <title> to <tuning name>".
+      Store a confirmed "manual" entry and print
+      "Set <artist> – <title> to <tuning name> (<playlist name>)".
       Exits 1 with a message if TUNING isn't understood.
 
 Every command accepts --cache PATH (default: $BASS_SORT_CACHE, else
@@ -129,6 +135,8 @@ def make_app(music: Callable[[], Music], sources: SourcesFactory) -> typer.Typer
                 return
             for item in items:
                 typer.echo(f"\n{item.artist} – {item.title}")
+                if not item.candidates:
+                    typer.echo("  No tunings found.")
                 for i, m in enumerate(item.candidates, 1):
                     typer.echo(
                         f"  {i}) {m.tuning.name} ({m.source}: {m.matched_artist} – "
@@ -139,7 +147,7 @@ def make_app(music: Callable[[], Music], sources: SourcesFactory) -> typer.Typer
                     break
                 if isinstance(chosen, Tuning):
                     cache.put(item.artist, item.title, Entry(chosen, "manual", confirmed=True))
-                    typer.echo(f"Set {item.artist} – {item.title} to {chosen.name}")
+                    typer.echo(f"Set {item.artist} – {item.title} to {_described(chosen)}")
         finally:
             cache.close()
 
@@ -156,15 +164,23 @@ def make_app(music: Callable[[], Music], sources: SourcesFactory) -> typer.Typer
             cache.put(artist, title, Entry(parsed, "manual", confirmed=True))
         finally:
             cache.close()
-        typer.echo(f"Set {artist} – {title} to {parsed.name}")
+        typer.echo(f"Set {artist} – {title} to {_described(parsed)}")
 
     return app
+
+
+TUNING_EXAMPLES = "(e.g. Drop D or B E A D G)"
+
+
+def _described(tuning: Tuning) -> str:
+    return f"{tuning.name} ({tuning.playlist_name})"
 
 
 def _ask_tuning(count: int, candidates: list[Tuning]) -> Optional[object]:
     """Prompt until the answer is a candidate number, a tuning, "s" (None) or "q"."""
     while True:
-        answer = str(typer.prompt("Number, tuning, s to skip, q to quit")).strip()
+        choose = f"Choose 1-{count}, type a tuning" if count else "Type a tuning"
+        answer = str(typer.prompt(f"{choose} {TUNING_EXAMPLES}, s to skip, q to quit")).strip()
         lowered = answer.lower()
         if lowered == "s":
             return None

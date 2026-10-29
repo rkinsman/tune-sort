@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
+import pytest
 from conftest import FakeMusic, FakeSource, T, make_match, make_track
 from typer.testing import CliRunner
 
@@ -11,6 +12,7 @@ from bass_sort.cli import make_app
 DASH = "–"
 ARROW = "→"
 DROP_D = "Bass %s Drop D" % DASH
+B5_PLAYLIST = "Bass 5-String %s B Standard" % DASH
 
 A = make_track("A", "Tool", "Schism")
 B = make_track("B", "Nobody", "Nothing")
@@ -137,6 +139,14 @@ CANDS = [
     make_match("D# G# C# F#", "songsterr", False, artist="Tool", title="Schism (Demo)"),
 ]
 
+BILLIE_CANDS = [
+    make_match("E A D G", "ug-bass", True, artist="Billie Eilish", title="bad guy"),
+    make_match("D G C F", "songsterr", True, artist="Billie Eilish", title="bad guy"),
+]
+
+PROMPT_WITH = "Choose 1-2, type a tuning (e.g. Drop D or B E A D G), s to skip, q to quit"
+PROMPT_NONE = "Type a tuning (e.g. Drop D or B E A D G), s to skip, q to quit"
+
 
 def test_review_empty(cache_path):
     result, _ = invoke(FakeMusic(), ["review"], cache_path)
@@ -152,6 +162,25 @@ def test_review_shows_candidates(cache_path):
     assert "Tool %s Schism" % DASH in out
     assert "1) Drop D (ug-bass: Tool %s Schism (Live))" % DASH in out
     assert "2) Eb Standard (songsterr: Tool %s Schism (Demo))" % DASH in out
+    assert "No tunings found." not in out
+
+
+def test_review_prompt_with_candidates(cache_path):
+    _queue(cache_path, [("Tool", "Schism", CANDS)])
+    result, _ = invoke(FakeMusic(), ["review"], cache_path, input="s\n")
+    assert "Choose 1-2" in result.output
+    assert "type a tuning" in result.output
+    assert PROMPT_WITH in result.output
+
+
+def test_review_no_candidates_message_and_prompt(cache_path):
+    _queue(cache_path, [("Tool", "Schism", [])])
+    result, _ = invoke(FakeMusic(), ["review"], cache_path, input="s\n")
+    assert result.exit_code == 0
+    out = result.output
+    assert "No tunings found." in out
+    assert PROMPT_NONE in out
+    assert "Choose 1-" not in out
 
 
 def test_review_pick_candidate_number(cache_path):
@@ -163,6 +192,7 @@ def test_review_pick_candidate_number(cache_path):
     assert e.tuning == T("Eb Ab Db Gb")
     assert e.confirmed is True
     assert _queued(cache_path) == []
+    assert "Set Tool %s Schism to Eb Standard (Bass %s Eb Standard)" % (DASH, DASH) in result.output
 
 
 def test_review_type_tuning_name(cache_path):
@@ -170,6 +200,39 @@ def test_review_type_tuning_name(cache_path):
     result, _ = invoke(FakeMusic(), ["review"], cache_path, input="Drop C\n")
     assert result.exit_code == 0
     assert _entry(cache_path, "Tool", "Schism") == Entry(T("C G C F"), "manual", True)
+    assert _queued(cache_path) == []
+    assert "Set Tool %s Schism to Drop C (Bass %s Drop C)" % (DASH, DASH) in result.output
+
+
+def test_review_typed_tuning_overrides_candidates(cache_path):
+    _queue(cache_path, [("Billie Eilish", "bad guy", BILLIE_CANDS)])
+    result, _ = invoke(FakeMusic(), ["review"], cache_path, input="B E A D G\n")
+    assert result.exit_code == 0, result.output
+    e = _entry(cache_path, "Billie Eilish", "bad guy")
+    assert e == Entry(T("B E A D G"), "manual", True)
+    assert e.tuning.string_count == 5
+    assert _queued(cache_path) == []
+    expected = "Set Billie Eilish %s bad guy to B Standard (%s)" % (DASH, B5_PLAYLIST)
+    assert expected in result.output
+
+
+def test_review_no_candidates_type_tuning(cache_path):
+    _queue(cache_path, [("Tool", "Schism", [])])
+    result, _ = invoke(FakeMusic(), ["review"], cache_path, input="Drop D\n")
+    assert result.exit_code == 0
+    assert _entry(cache_path, "Tool", "Schism") == Entry(T("D A D G"), "manual", True)
+    assert _queued(cache_path) == []
+    assert "Set Tool %s Schism to Drop D (%s)" % (DASH, DROP_D) in result.output
+
+
+@pytest.mark.parametrize("answer", ["BEADG", "5-string B Standard"])
+def test_review_typed_five_string_forms(cache_path, answer):
+    _queue(cache_path, [("Billie Eilish", "bad guy", BILLIE_CANDS)])
+    result, _ = invoke(FakeMusic(), ["review"], cache_path, input=answer + "\n")
+    assert result.exit_code == 0, result.output
+    assert _entry(cache_path, "Billie Eilish", "bad guy") == Entry(
+        T("B E A D G"), "manual", True
+    )
     assert _queued(cache_path) == []
 
 
@@ -203,8 +266,17 @@ def test_review_quit(cache_path):
 def test_set(cache_path):
     result, _ = invoke(FakeMusic(), ["set", "Tool", "Schism", "Drop D"], cache_path)
     assert result.exit_code == 0, result.output
-    assert "Set Tool %s Schism to Drop D" % DASH in result.output
+    assert "Set Tool %s Schism to Drop D (%s)" % (DASH, DROP_D) in result.output
     assert _entry(cache_path, "Tool", "Schism") == Entry(T("D A D G"), "manual", True)
+
+
+def test_set_five_string_prints_playlist(cache_path):
+    result, _ = invoke(
+        FakeMusic(), ["set", "Billie Eilish", "bad guy", "5-string B Standard"], cache_path
+    )
+    assert result.exit_code == 0, result.output
+    expected = "Set Billie Eilish %s bad guy to B Standard (%s)" % (DASH, B5_PLAYLIST)
+    assert expected in result.output
 
 
 def test_set_removes_from_review_queue(cache_path):
