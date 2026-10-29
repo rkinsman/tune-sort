@@ -4,9 +4,9 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
-from conftest import FakeMusic, FakeSource, make_match, make_track
 from typer.testing import CliRunner
 
+from tests.conftest import FakeMusic, FakeSource, make_match, make_track
 from tune_sort.cli import make_app
 
 DASH = "–"

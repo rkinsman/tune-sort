@@ -1,8 +1,7 @@
 """Resolver: lookup failures, already-queued songs and `recheck`."""
 from __future__ import annotations
 
-from conftest import FakeSource, T, failing_source, make_match
-
+from tests.conftest import FakeSource, T, failing_source, make_match
 from tune_sort.cache import Entry
 from tune_sort.resolver import Resolution, resolve
 from tune_sort.sources import SourceError

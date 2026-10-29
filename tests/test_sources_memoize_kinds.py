@@ -4,7 +4,8 @@ from __future__ import annotations
 from typing import List
 
 import pytest
-from conftest import (
+
+from tests.conftest import (
     FakeFetch,
     T,
     fixture_text,
@@ -12,7 +13,6 @@ from conftest import (
     ug_search_page,
     ug_tab_page,
 )
-
 from tune_sort.sources import FetchError, memoize
 from tune_sort.sources.songsterr import Songsterr
 from tune_sort.sources.ultimate_guitar import SEARCH_URL, UltimateGuitar

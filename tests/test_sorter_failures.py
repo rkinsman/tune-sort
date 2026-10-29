@@ -1,8 +1,7 @@
 """sort_playlist: lookup failures, add errors, queued songs and recheck."""
 from __future__ import annotations
 
-from conftest import FakeMusic, FakeSource, failing_source, make_match, make_track
-
+from tests.conftest import FakeMusic, FakeSource, failing_source, make_match, make_track
 from tune_sort.sorter import sort_playlist
 from tune_sort.sources import SourceError
 

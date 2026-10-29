@@ -3,8 +3,7 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 
-from conftest import T, make_match
-
+from tests.conftest import T, make_match
 from tune_sort.cache import Cache, Entry, ReviewItem, migrate_legacy_cache
 from tune_sort.tuning import Tuning
 

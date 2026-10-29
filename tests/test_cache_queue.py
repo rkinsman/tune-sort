@@ -1,8 +1,7 @@
 """Cache.queued, Cache.review_items(songs) and titles that normalise to nothing."""
 from __future__ import annotations
 
-from conftest import T, make_match
-
+from tests.conftest import T, make_match
 from tune_sort.cache import Cache, Entry, ReviewItem
 
 C1 = [make_match("D A D G"), make_match("E A D G", "songsterr", False, title="Schism (Live)")]

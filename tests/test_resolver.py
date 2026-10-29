@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from conftest import FakeSource, T, make_match
-
+from tests.conftest import FakeSource, T, make_match
 from tune_sort.cache import Entry
 from tune_sort.resolver import resolve
 

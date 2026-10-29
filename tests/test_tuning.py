@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from conftest import T
 
+from tests.conftest import T
 from tune_sort.tuning import (
     INSTRUMENTS,
     STRING_RANGE,
