@@ -15,6 +15,9 @@ from SOURCE_NAMES[instrument], and none twice.
 
 from __future__ import annotations
 
+import json
+import os
+import tempfile
 import tomllib
 from collections.abc import Sequence
 from pathlib import Path
@@ -70,7 +73,58 @@ def save_order(
     Raises ConfigError, leaving the file untouched, if `order` is invalid or the existing
     file is not valid TOML or holds anything but [bass] and [guitar] tables with only an
     `order` key (rewriting it would lose that content). The write is atomic."""
-    raise NotImplementedError
+    checked = None if order is None else _validated(list(order), instrument)
+    orders: dict[Instrument, list[str]] = {}
+    try:
+        text: Optional[str] = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        text = None
+    except (OSError, UnicodeDecodeError) as e:
+        raise ConfigError(f"{path}: {e}") from e
+    if text is not None:
+        try:
+            data = tomllib.loads(text)
+        except tomllib.TOMLDecodeError as e:
+            raise ConfigError(f"{path}: {e}") from e
+        for key, section in data.items():
+            if (
+                key not in SOURCE_NAMES
+                or not isinstance(section, dict)
+                or not set(section) <= {"order"}
+            ):
+                raise ConfigError(
+                    f"{path}: refusing to rewrite a file with content other than "
+                    "[bass] and [guitar] order keys"
+                )
+        for inst in SOURCE_NAMES:
+            if inst != instrument and "order" in data.get(inst, {}):
+                try:
+                    orders[inst] = _validated(data[inst]["order"], inst)
+                except ConfigError as e:
+                    raise ConfigError(f"{path}: [{inst}] order: {e}") from e
+    if checked is not None:
+        orders[instrument] = checked
+    out = ""
+    for inst in SOURCE_NAMES:
+        if inst in orders:
+            names = ", ".join(json.dumps(n) for n in orders[inst])
+            out += f"[{inst}]\norder = [{names}]\n\n"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(out)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+    except OSError as e:
+        raise ConfigError(f"{path}: {e}") from e
+    return list(checked) if checked is not None else list(DEFAULT_ORDER[instrument])
 
 
 def parse_order(text: str, instrument: Instrument) -> list[str]:
