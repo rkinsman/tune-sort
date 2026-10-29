@@ -35,9 +35,9 @@ def normalise_title(title: str) -> str:
     """Lowercase, drop punctuation, and drop bracketed or dashed suffixes that don't change
     the recording: "(Remastered 2011)", "- 2003 Remaster", "[Deluxe Edition]",
     "(feat. X)", "(Mono)", "(Album Version)". Live/acoustic/demo/remix suffixes are kept,
-    since those are different recordings."""
-
-    return _plain(_without_same_recording(title))
+    since those are different recordings. A title with nothing left after that, such as
+    "…", is kept lowercased with its whitespace collapsed, so such titles stay distinct."""
+    return _plain(_without_same_recording(title)) or " ".join(title.lower().split())
 
 
 def _without_same_recording(title: str) -> str:

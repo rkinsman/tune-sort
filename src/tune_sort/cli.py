@@ -13,15 +13,19 @@
       "(e.g. Drop D or D A D G B E)" for guitar.
 
   sort PLAYLIST [--dry-run] [--order NAMES] [--source both|ug|songsterr]
-       [--review/--no-review]
+       [--review/--no-review] [--recheck]
       Resolve each track and print one line per track:
           "<artist> – <title> → <playlist name> (<source>)"  or
-          "<artist> – <title> → needs review"
+          "<artist> – <title> → needs review"  or
+          "<artist> – <title> → lookup failed (<source names>), will retry"
       then a summary:
           "Created playlist: <name>"           ("Would create playlist: <name>" with --dry-run)
           "Added <n> to <playlist>"            ("Would add <n> to <playlist>" with --dry-run)
           "Already present: <n>"
           "Needs review: <n>"
+          "Lookup failed: <n>"                 (only when n > 0)
+          "Couldn't add <artist> – <title> to <playlist>: <error>"  (one per failed add)
+      Songs already queued for review aren't looked up again unless --recheck.
       Sources are asked in the order from the config file (tune_sort.config), or
       --order NAMES for this run (comma-separated, e.g. "songsterr,ug-bass,ug-pro").
       --source then keeps only UG sources (ug) or only Songsterr (songsterr); both
@@ -40,7 +44,7 @@
       "  <i>) <tuning name> (<notes>) → <playlist name> (<source>: <matched artist> – "
       "<matched title>)", where <notes> is Tuning.notes; the " (<notes>)" part is left out
       when the name already is the notes. The playlist name shows the string count. Or
-      "  No tunings found." when there are none, then prompt:
+      "  No tunings found." when there are none, then prompt (end of input counts as q):
           "Choose 1-<n>, type a tuning (e.g. Drop D or B E A D G), s to skip, q to quit"
           "Type a tuning (e.g. Drop D or B E A D G), s to skip, q to quit"  (no candidates)
       An answer is a candidate number, a tuning (anything tuning.parse_name accepts),
@@ -87,7 +91,6 @@ from rich.text import Text
 
 from tune_sort.cache import DEFAULT_PATH, Cache, Entry, ReviewItem
 from tune_sort.config import CONFIG_PATH, ConfigError, load_order, parse_order
-from tune_sort.matching import normalise_artist, normalise_title
 from tune_sort.music import Music, MusicError, Track
 from tune_sort.sorter import Report, sort_playlist
 from tune_sort.sources import Source
@@ -174,6 +177,9 @@ def _instrument_app(
         review: Optional[bool] = typer.Option(
             None, "--review/--no-review", help="Review songs that need it without asking."
         ),
+        recheck: bool = typer.Option(
+            False, "--recheck", help="Look up songs waiting for review again."
+        ),
         cache_path: Path = CACHE_OPTION,
         config_path: Path = CONFIG_OPTION,
     ) -> None:
@@ -182,15 +188,14 @@ def _instrument_app(
         cache = Cache(cache_path, instrument)
         try:
             chosen = sources(instrument, names)
-            report = _sort_and_print(music(), playlist, chosen, cache, dry_run)
+            report = _sort_and_print(music(), playlist, chosen, cache, dry_run, recheck)
             if not report.review:
                 return
             if review is None:
                 review = _confirm(f"Review {len(report.review)} songs now?")
             if not review:
                 return
-            keys = {_song_key(t.artist, t.name) for t in report.review}
-            items = [i for i in cache.review_items() if _song_key(i.artist, i.title) in keys]
+            items = cache.review_items((t.artist, t.name) for t in report.review)
             if _review_items(cache, items):
                 typer.echo("")
                 _sort_and_print(music(), playlist, chosen, cache, dry_run)
@@ -262,7 +267,12 @@ def _source_names(
 
 
 def _sort_and_print(
-    music: Music, playlist: str, sources: list[Source], cache: Cache, dry_run: bool
+    music: Music,
+    playlist: str,
+    sources: list[Source],
+    cache: Cache,
+    dry_run: bool,
+    recheck: bool = False,
 ) -> Report:
     try:
         console = Console(stderr=True)
@@ -273,16 +283,18 @@ def _sort_and_print(
                 def show(i: int, total: int, track: Track) -> None:
                     status.update(Text(f"[{i}/{total}] Looking up {track.artist} – {track.name}…"))
 
-                report = sort_playlist(music, playlist, sources, cache, dry_run, show)
+                report = sort_playlist(music, playlist, sources, cache, dry_run, show, recheck)
         else:
-            report = sort_playlist(music, playlist, sources, cache, dry_run)
+            report = sort_playlist(music, playlist, sources, cache, dry_run, recheck=recheck)
     except MusicError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1) from e
 
     for track, res in report.resolutions:
         song = f"{track.artist} – {track.name}"
-        if res.tuning is None:
+        if res.lookup_failed:
+            typer.echo(f"{song} → lookup failed ({', '.join(res.failed)}), will retry")
+        elif res.tuning is None:
             typer.echo(f"{song} → needs review")
         else:
             typer.echo(f"{song} → {res.tuning.playlist_name} ({res.source})")
@@ -295,6 +307,10 @@ def _sort_and_print(
         typer.echo(f"{verb} {len(tracks)} to {name}")
     typer.echo(f"Already present: {sum(len(t) for t in report.already_present.values())}")
     typer.echo(f"Needs review: {len(report.review)}")
+    if report.lookup_failed:
+        typer.echo(f"Lookup failed: {len(report.lookup_failed)}")
+    for track, name, error in report.add_errors:
+        typer.echo(f"Couldn't add {track.artist} – {track.name} to {name}: {error}")
     return report
 
 
@@ -322,10 +338,6 @@ def _review_items(cache: Cache, items: list[ReviewItem]) -> int:
     return answered
 
 
-def _song_key(artist: str, title: str) -> tuple[str, str]:
-    return normalise_artist(artist), normalise_title(title)
-
-
 def _confirm(question: str) -> bool:
     """Ask a yes/no question, defaulting to No, and treating end of input as No."""
     try:
@@ -347,11 +359,16 @@ def _described(tuning: Tuning) -> str:
 
 
 def _ask_tuning(count: int, candidates: list[Tuning], instrument: Instrument) -> Optional[object]:
-    """Prompt until the answer is a candidate number, a tuning, "s" (None) or "q"."""
+    """Prompt until the answer is a candidate number, a tuning, "s" (None) or "q" (also
+    returned at end of input)."""
     while True:
         choose = f"Choose 1-{count}, type a tuning" if count else "Type a tuning"
         examples = TUNING_EXAMPLES[instrument]
-        answer = str(typer.prompt(f"{choose} {examples}, s to skip, q to quit")).strip()
+        try:
+            answer = str(typer.prompt(f"{choose} {examples}, s to skip, q to quit")).strip()
+        except (typer.Abort, EOFError):
+            typer.echo("")
+            return "q"
         lowered = answer.lower()
         if lowered == "s":
             return None

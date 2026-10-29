@@ -44,7 +44,7 @@ tune_sort = ["py.typed"]
 
 [[tool.mypy.overrides]]
 # Tests are unannotated pytest functions; still type-check what they call.
-module = ["conftest", "test_cache", "test_cache_instruments", "test_cli", "test_cli_config", "test_config", "test_matching", "test_resolver", "test_songsterr", "test_songsterr_guitar", "test_sorter", "test_sorter_guitar", "test_sources_memoize_kinds", "test_tuning", "test_ultimate_guitar", "test_ultimate_guitar_guitar"]
+module = ["conftest", "test_cache", "test_cache_instruments", "test_cache_queue", "test_cli", "test_cli_config", "test_cli_failures", "test_config", "test_matching", "test_matching_empty_titles", "test_memoize_lru", "test_music", "test_resolver", "test_resolver_failures", "test_songsterr", "test_songsterr_guitar", "test_sorter", "test_sorter_failures", "test_sorter_guitar", "test_source_errors", "test_sources_memoize_kinds", "test_tuning", "test_ug_paging_rule", "test_ultimate_guitar", "test_ultimate_guitar_guitar"]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 disallow_untyped_calls = false

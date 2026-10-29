@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Optional, Protocol
@@ -16,6 +17,11 @@ class FetchError(Exception):
     pass
 
 
+class SourceError(Exception):
+    """A lookup couldn't finish because a fetch failed, so the answer is unknown (as
+    opposed to None: the source has no tuning for the song)."""
+
+
 @dataclass(frozen=True)
 class Match:
     """A tuning a source found for a song."""
@@ -28,14 +34,19 @@ class Match:
     exact: bool  # artist and title match the song (see tune_sort.matching)
 
 
-def memoize(fetch: Fetch) -> Fetch:
-    """Wrap a Fetch so each URL is fetched at most once; later calls return the stored
-    body. A FetchError is not stored: the next call for that URL tries again."""
-    bodies: dict[str, str] = {}
+def memoize(fetch: Fetch, maxsize: int = 64) -> Fetch:
+    """Wrap a Fetch so each URL is fetched at most once while it is among the `maxsize`
+    most recently used URLs; later calls return the stored body. A FetchError is not
+    stored: the next call for that URL tries again."""
+    bodies: OrderedDict[str, str] = OrderedDict()
 
     def memoized(url: str) -> str:
-        if url not in bodies:
+        if url in bodies:
+            bodies.move_to_end(url)
+        else:
             bodies[url] = fetch(url)
+            if len(bodies) > maxsize:
+                bodies.popitem(last=False)
         return bodies[url]
 
     return memoized
@@ -48,6 +59,7 @@ class Source(Protocol):
         """Return the best match for the song, or None if nothing has a tuning for the
         source's instrument.
 
-        Never raises for network or parse problems: those return None.
+        Raises SourceError when a fetch fails, so the answer is unknown. Parse problems
+        (unexpected page or JSON layout) return None.
         """
         ...

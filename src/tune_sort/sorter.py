@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from tune_sort.cache import Cache
-from tune_sort.music import Music, Track
+from tune_sort.music import Music, MusicError, Track
 from tune_sort.resolver import Resolution, resolve
 from tune_sort.sources import Source
 
@@ -19,6 +19,8 @@ class Report:
     already_present: dict[str, list[Track]] = field(default_factory=dict)
     created_playlists: list[str] = field(default_factory=list)
     review: list[Track] = field(default_factory=list)
+    lookup_failed: list[Track] = field(default_factory=list)  # retried on the next sort
+    add_errors: list[tuple[Track, str, str]] = field(default_factory=list)  # track, playlist, error
 
 
 def sort_playlist(
@@ -28,6 +30,7 @@ def sort_playlist(
     cache: Cache,
     dry_run: bool = False,
     on_progress: Optional[Callable[[int, int, Track], None]] = None,
+    recheck: bool = False,
 ) -> Report:
     """Resolve every track in `playlist` and add each resolved track to the playlist named
     by its tuning's `playlist_name`, creating that playlist if needed.
@@ -40,6 +43,9 @@ def sort_playlist(
     on_progress, if given, is called as on_progress(i, total, track) just before each
     track is resolved, with i counting from 1 and total the number of tracks in the
     playlist. It is not called for an empty playlist.
+
+    Tracks whose lookup failed go in `lookup_failed`. A MusicError while adding a track is
+    recorded in `add_errors` and the sort carries on. `recheck` is passed to resolve.
     """
     report = Report()
     tracks = music.get_tracks(playlist)
@@ -50,8 +56,11 @@ def sort_playlist(
     for i, track in enumerate(tracks, 1):
         if on_progress is not None:
             on_progress(i, len(tracks), track)
-        resolution = resolve(track.artist, track.name, sources, cache)
+        resolution = resolve(track.artist, track.name, sources, cache, recheck)
         report.resolutions.append((track, resolution))
+        if resolution.lookup_failed:
+            report.lookup_failed.append(track)
+            continue
         if resolution.tuning is None:
             report.review.append(track)
             continue
@@ -70,7 +79,11 @@ def sort_playlist(
             report.already_present.setdefault(target, []).append(track)
             continue
         if not dry_run:
-            music.add_track(target, track.persistent_id)
+            try:
+                music.add_track(target, track.persistent_id)
+            except MusicError as e:
+                report.add_errors.append((track, target, str(e)))
+                continue
         members[target].add(track.persistent_id)
         report.added.setdefault(target, []).append(track)
 

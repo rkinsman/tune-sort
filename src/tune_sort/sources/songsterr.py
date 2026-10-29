@@ -12,7 +12,7 @@ from typing import Any, Optional
 from urllib.parse import urlencode
 
 from tune_sort import matching
-from tune_sort.sources import Fetch, FetchError, Match
+from tune_sort.sources import Fetch, FetchError, Match, SourceError
 from tune_sort.tuning import Instrument, Tuning, from_midi
 
 SEARCH_URL = "https://www.songsterr.com/api/songs"
@@ -60,8 +60,12 @@ class Songsterr:
 
     def lookup(self, artist: str, title: str) -> Optional[Match]:
         try:
-            songs = json.loads(self._fetch(search_url(artist, title)))
-        except (FetchError, ValueError):
+            body = self._fetch(search_url(artist, title))
+        except FetchError as e:
+            raise SourceError(str(e)) from e
+        try:
+            songs = json.loads(body)
+        except ValueError:
             return None
         if not isinstance(songs, list):
             return None

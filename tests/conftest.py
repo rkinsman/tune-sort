@@ -4,12 +4,12 @@ from __future__ import annotations
 import html
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import pytest
 
 from tune_sort.music import MusicError, Track
-from tune_sort.sources import FetchError, Match
+from tune_sort.sources import FetchError, Match, SourceError
 from tune_sort.tuning import Tuning
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -93,7 +93,9 @@ def ug_tab_page(
 class FakeFetch:
     """fetch(url) -> str. Search URLs (by prefix) get `search_response`; others come from `pages`.
 
-    Unknown URLs raise FetchError. A response that is an Exception instance is raised.
+    Unknown URLs raise FetchError, except that when `extra_pro_page` is given, unknown URLs
+    containing "guitar-pro" are served that page. A response that is an Exception instance is
+    raised.
     """
 
     def __init__(
@@ -101,10 +103,12 @@ class FakeFetch:
         pages: Optional[Dict[str, Any]] = None,
         search_prefix: Optional[str] = None,
         search_response: Any = None,
+        extra_pro_page: Optional[str] = None,
     ) -> None:
         self.pages = dict(pages or {})
         self.search_prefix = search_prefix
         self.search_response = search_response
+        self.extra_pro_page = extra_pro_page
         self.calls: List[str] = []
 
     def __call__(self, url: str) -> str:
@@ -118,6 +122,8 @@ class FakeFetch:
             if isinstance(value, Exception):
                 raise value
             return str(value)
+        if self.extra_pro_page is not None and "guitar-pro" in url:
+            return self.extra_pro_page
         raise FetchError("unknown url: " + url)
 
     def tab_calls(self) -> List[str]:
@@ -130,9 +136,17 @@ class FakeFetch:
 
 
 class FakeMusic:
-    """In-memory implementation of the Music protocol that records mutating calls."""
+    """In-memory implementation of the Music protocol that records mutating calls.
 
-    def __init__(self, playlists: Optional[Dict[str, List[Track]]] = None) -> None:
+    `fail_add` maps a persistent id to the message of the MusicError add_track raises for it.
+    """
+
+    def __init__(
+        self,
+        playlists: Optional[Dict[str, List[Track]]] = None,
+        fail_add: Optional[Dict[str, str]] = None,
+    ) -> None:
+        self.fail_add: Dict[str, str] = dict(fail_add or {})
         self.playlists: Dict[str, List[Track]] = {k: list(v) for k, v in (playlists or {}).items()}
         self.library: Dict[str, Track] = {}
         for tracks in self.playlists.values():
@@ -158,6 +172,8 @@ class FakeMusic:
 
     def add_track(self, playlist: str, persistent_id: str) -> bool:
         self.add_calls.append((playlist, persistent_id))
+        if persistent_id in self.fail_add:
+            raise MusicError(self.fail_add[persistent_id])
         if playlist not in self.playlists:
             raise MusicError("no such playlist: " + playlist)
         if any(t.persistent_id == persistent_id for t in self.playlists[playlist]):
@@ -192,13 +208,16 @@ def make_match(
 
 
 class FakeSource:
-    """Source with a name and scripted answers keyed by (artist, title)."""
+    """Source with a name and scripted answers keyed by (artist, title).
+
+    An answer (or the default) that is an Exception instance is raised by `lookup`.
+    """
 
     def __init__(
         self,
         name: str,
-        answers: Optional[Dict[Tuple[str, str], Optional[Match]]] = None,
-        default: Optional[Match] = None,
+        answers: Optional[Dict[Tuple[str, str], Any]] = None,
+        default: Any = None,
     ) -> None:
         self.name = name
         self.answers = dict(answers or {})
@@ -207,7 +226,15 @@ class FakeSource:
 
     def lookup(self, artist: str, title: str) -> Optional[Match]:
         self.calls.append((artist, title))
-        return self.answers.get((artist, title), self.default)
+        value = self.answers.get((artist, title), self.default)
+        if isinstance(value, Exception):
+            raise value
+        return cast("Optional[Match]", value)
+
+
+def failing_source(name: str) -> FakeSource:
+    """A FakeSource whose lookup always raises SourceError."""
+    return FakeSource(name, default=SourceError("%s is down" % name))
 
 
 @pytest.fixture

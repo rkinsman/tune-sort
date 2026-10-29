@@ -19,7 +19,11 @@ Songs that can't be matched exactly go to the review queue too. Answers are cach
 up once per instrument.
 
 Running `sort` again is safe. It reuses the existing playlists, never adds a song twice,
-and only looks up songs it hasn't seen before.
+and only looks up songs it hasn't seen before. Songs waiting for review aren't looked up
+again unless you pass `--recheck`. If a site can't be reached, the song isn't cached or
+queued; it shows as `lookup failed` and is tried again on the next `sort`. A song that
+can't be added to its playlist (for example one that isn't in your library) is reported
+at the end, and the rest are still sorted.
 
 Only macOS is supported, because the app talks to the Music app through `osascript`. It
 needs no Apple Developer or Ultimate Guitar account.

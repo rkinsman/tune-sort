@@ -102,6 +102,10 @@ def test_songsterr_name():
 
 # --------------------------------------------------------- real Schism fixtures
 
+# The real search page lists more Pro tabs than we have saved; any other Pro tab is served
+# as a guitar-only page (skipped for bass, a valid but different candidate for guitar).
+OTHER_PRO = ug_tab_page("E A D G B E", "lead guitar", 1)
+
 
 def schism_fetch():
     return FakeFetch(
@@ -111,6 +115,7 @@ def schism_fetch():
         },
         SEARCH_URL,
         fixture_text("ug/search_tool_schism.html"),
+        extra_pro_page=OTHER_PRO,
     )
 
 

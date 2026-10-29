@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -154,15 +155,26 @@ class Cache:
                     (key, artist, title, blob),
                 )
 
-    def review_items(self) -> list[ReviewItem]:
-        """Queued songs in the order they were first queued."""
+    def queued(self, artist: str, title: str) -> Optional[tuple[Match, ...]]:
+        """The song's review candidates if it is queued for review, else None."""
+        row = self._db.execute(
+            "SELECT candidates FROM review WHERE song_key = ?", (self._key(artist, title),)
+        ).fetchone()
+        if row is None:
+            return None
+        return tuple(_match_from_json(d, self.instrument) for d in json.loads(row[0]))
+
+    def review_items(self, songs: Optional[Iterable[tuple[str, str]]] = None) -> list[ReviewItem]:
+        """Queued songs in the order they were first queued. With `songs`, (artist, title)
+        pairs, only the queued songs among them (matched as cache keys are)."""
+        keys = None if songs is None else {self._key(a, t) for a, t in songs}
         rows = self._db.execute(
             "SELECT song_key, artist, title, candidates FROM review ORDER BY queued_order"
         ).fetchall()
         return [
             ReviewItem(a, t, tuple(_match_from_json(d, self.instrument) for d in json.loads(c)))
             for key, a, t, c in rows
-            if _key_instrument(key) == self.instrument
+            if _key_instrument(key) == self.instrument and (keys is None or key in keys)
         ]
 
     def _key(self, artist: str, title: str) -> str:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
+import pytest
 from conftest import (
     FakeFetch,
     T,
@@ -13,7 +14,7 @@ from conftest import (
     ug_tab_page,
 )
 
-from tune_sort.sources import FetchError
+from tune_sort.sources import FetchError, SourceError
 from tune_sort.sources.ultimate_guitar import (
     MAX_PAGES_PER_TYPE,
     MAX_SEARCH_PAGES,
@@ -81,6 +82,8 @@ def test_real_fixtures_give_bass_tab_not_multi_instrument_pro():
         },
         SEARCH_URL,
         fixture_text("ug/search_tool_schism.html"),
+        # The search page lists further Pro tabs; serve them as guitar-only pages.
+        extra_pro_page=ug_tab_page("E A D G B E", "lead guitar", 1),
     )
     m = UltimateGuitar(fetch).lookup("Tool", "Schism")
     assert m is not None
@@ -188,13 +191,13 @@ def test_bass_page_limit():
     assert fetch.tab_calls() == [tab_url(i) for i in (1, 2, 3)]
 
 
-def test_fetch_error_on_tab_page_skips_it():
+def test_fetch_error_on_tab_page_raises_source_error():
     ug, _ = make(
         [bass(1, 4.9), bass(2, 4.0)],
         {tab_url(1): FetchError("boom"), tab_url(2): ug_tab_page("D A D G")},
     )
-    m = ug.lookup("Tool", "Schism")
-    assert m.url == tab_url(2)
+    with pytest.raises(SourceError):
+        ug.lookup("Tool", "Schism")
 
 
 def test_missing_and_invalid_tuning_skipped():
@@ -298,9 +301,10 @@ def test_similar_used_when_exact_results_unusable():
     assert m.url == tab_url(2)
 
 
-def test_search_fetch_error_returns_none():
+def test_search_fetch_error_raises_source_error():
     fetch = FakeFetch({}, SEARCH_URL, FetchError("down"))
-    assert UltimateGuitar(fetch).lookup("Tool", "Schism") is None
+    with pytest.raises(SourceError):
+        UltimateGuitar(fetch).lookup("Tool", "Schism")
 
 
 def test_search_page_without_store_returns_none():
@@ -357,6 +361,11 @@ def paged(results, total=None, current=1):
     return store_page(data)
 
 
+# A Pro tab page that is usable for bass (bass-only) and one that is not.
+BASS_ONLY_PRO = ug_tab_page("E A D G", "bass", 1)
+GUITAR_ONLY_PRO = ug_tab_page("E A D G B E", "lead guitar", 1)
+
+
 def test_max_search_pages_constant():
     assert MAX_SEARCH_PAGES == 3
 
@@ -392,26 +401,54 @@ def test_bass_tabs_on_page_two_are_found():
     assert fetch.search_page_requests == [1, 2]
 
 
-def test_no_page_two_request_when_page_one_has_bass_tabs():
+def test_no_page_two_request_when_page_one_has_exact_bass_tab_and_only_tabs_are_used():
     fetch = PagedFetch(
         {1: paged([bass(1)], total=5), 2: paged([bass(2)], total=5, current=2)},
         {tab_url(1): ug_tab_page("D A D G"), tab_url(2): ug_tab_page("C G C F")},
     )
-    m = UltimateGuitar(fetch).lookup("Tool", "Schism")
+    m = UltimateGuitar(fetch, "bass", ("tab",)).lookup("Tool", "Schism")
     assert m is not None
     assert m.url == tab_url(1)
     assert fetch.search_page_requests == [1]
 
 
-def test_similar_bass_tabs_on_page_one_stop_paging():
+def test_no_page_two_request_when_page_one_has_exact_pro_and_exact_bass_tab():
     fetch = PagedFetch(
-        {1: paged([bass(1, title="Schism (Live)")], total=5)},
-        {tab_url(1): ug_tab_page("D A D G")},
+        {1: paged([pro(1), bass(2)], total=5), 2: paged([bass(3)], total=5, current=2)},
+        {tab_url(1, "guitar-pro"): BASS_ONLY_PRO, tab_url(2): ug_tab_page("D A D G")},
     )
     m = UltimateGuitar(fetch).lookup("Tool", "Schism")
     assert m is not None
-    assert m.exact is False
+    assert m.source == "ug-pro"
     assert fetch.search_page_requests == [1]
+
+
+def test_exact_bass_tab_alone_on_page_one_does_not_stop_default_paging():
+    fetch = PagedFetch(
+        {1: paged([bass(1)], total=2), 2: paged([bass(2)], total=2, current=2)},
+        {tab_url(1): ug_tab_page("D A D G"), tab_url(2): ug_tab_page("C G C F")},
+    )
+    m = UltimateGuitar(fetch).lookup("Tool", "Schism")
+    assert m is not None
+    assert m.url == tab_url(1)
+    assert fetch.search_page_requests == [1, 2]
+
+
+def test_similar_bass_tabs_on_page_one_do_not_stop_paging():
+    # No exact Pro tab exists, so default kinds keep paging through page 3.
+    fetch = PagedFetch(
+        {
+            1: paged([bass(1, title="Schism (Live)")], total=5),
+            2: paged([bass(2)], total=5, current=2),
+            3: paged([], total=5, current=3),
+        },
+        {tab_url(1): ug_tab_page("C G C F"), tab_url(2): ug_tab_page("D A D G")},
+    )
+    m = UltimateGuitar(fetch).lookup("Tool", "Schism")
+    assert m is not None
+    assert m.exact is True
+    assert m.url == tab_url(2)
+    assert fetch.search_page_requests == [1, 2, 3]
 
 
 def test_bass_tabs_of_another_song_do_not_stop_paging():
@@ -420,7 +457,10 @@ def test_bass_tabs_of_another_song_do_not_stop_paging():
             1: paged([pro(1), bass(9, artist="Opeth", title="Deliverance")], total=3),
             2: paged([bass(2)], total=3, current=2),
         },
-        {tab_url(2): ug_tab_page("D A D G")},
+        {
+            tab_url(1, "guitar-pro"): GUITAR_ONLY_PRO,
+            tab_url(2): ug_tab_page("D A D G"),
+        },
     )
     m = UltimateGuitar(fetch).lookup("Tool", "Schism")
     assert m is not None
@@ -474,7 +514,12 @@ def test_stops_after_max_search_pages():
             3: paged([pro(3)], total=10, current=3),
             4: paged([bass(4)], total=10, current=4),
         },
-        {tab_url(4): ug_tab_page("D A D G")},
+        {
+            tab_url(1, "guitar-pro"): GUITAR_ONLY_PRO,
+            tab_url(2, "guitar-pro"): GUITAR_ONLY_PRO,
+            tab_url(3, "guitar-pro"): GUITAR_ONLY_PRO,
+            tab_url(4): ug_tab_page("D A D G"),
+        },
     )
     assert UltimateGuitar(fetch).lookup("Tool", "Schism") is None
     assert fetch.search_page_requests == [1, 2, 3]
@@ -487,14 +532,21 @@ def test_stops_at_pagination_total():
             2: paged([pro(2)], total=2, current=2),
             3: paged([bass(3)], total=2, current=3),
         },
-        {tab_url(3): ug_tab_page("D A D G")},
+        {
+            tab_url(1, "guitar-pro"): GUITAR_ONLY_PRO,
+            tab_url(2, "guitar-pro"): GUITAR_ONLY_PRO,
+            tab_url(3): ug_tab_page("D A D G"),
+        },
     )
     assert UltimateGuitar(fetch).lookup("Tool", "Schism") is None
     assert fetch.search_page_requests == [1, 2]
 
 
 def test_single_page_total_means_no_second_request():
-    fetch = PagedFetch({1: paged([pro(1)], total=1), 2: paged([bass(2)], total=1, current=2)})
+    fetch = PagedFetch(
+        {1: paged([pro(1)], total=1), 2: paged([bass(2)], total=1, current=2)},
+        {tab_url(1, "guitar-pro"): GUITAR_ONLY_PRO},
+    )
     assert UltimateGuitar(fetch).lookup("Tool", "Schism") is None
     assert fetch.search_page_requests == [1]
 
@@ -502,20 +554,19 @@ def test_single_page_total_means_no_second_request():
 def test_missing_pagination_stops_after_first_page():
     fetch = PagedFetch(
         {1: paged([pro(1)]), 2: paged([bass(2)])},
-        {tab_url(2): ug_tab_page("D A D G")},
+        {tab_url(1, "guitar-pro"): GUITAR_ONLY_PRO, tab_url(2): ug_tab_page("D A D G")},
     )
     assert UltimateGuitar(fetch).lookup("Tool", "Schism") is None
     assert fetch.search_page_requests == [1]
 
 
-def test_fetch_error_on_page_two_keeps_page_one_results():
+def test_fetch_error_on_page_two_raises_source_error():
     fetch = PagedFetch(
         {1: paged([pro(1)], total=3), 2: FetchError("down")},
         {tab_url(1, "guitar-pro"): ug_tab_page("E A D G", "bass", 1)},
     )
-    m = UltimateGuitar(fetch).lookup("Tool", "Schism")
-    assert m is not None
-    assert m.source == "ug-pro"
+    with pytest.raises(SourceError):
+        UltimateGuitar(fetch).lookup("Tool", "Schism")
     assert fetch.search_page_requests == [1, 2]
 
 
@@ -534,6 +585,7 @@ def test_unparseable_page_two_keeps_page_one_results():
     assert fetch.search_page_requests == [1, 2]
 
 
-def test_failed_page_two_with_nothing_usable_returns_none():
+def test_failed_page_two_with_nothing_usable_raises_source_error():
     fetch = PagedFetch({1: paged([pro(1)], total=3), 2: FetchError("down")})
-    assert UltimateGuitar(fetch).lookup("Tool", "Schism") is None
+    with pytest.raises(SourceError):
+        UltimateGuitar(fetch).lookup("Tool", "Schism")

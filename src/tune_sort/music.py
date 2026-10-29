@@ -114,4 +114,7 @@ def _run_jxa(script: str, *args: str) -> Any:
     if proc.returncode != 0:
         message = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else "unknown"
         raise MusicError(message)
-    return json.loads(proc.stdout)
+    try:
+        return json.loads(proc.stdout)
+    except ValueError as e:
+        raise MusicError(f"unexpected output from osascript: {proc.stdout.strip()!r}") from e

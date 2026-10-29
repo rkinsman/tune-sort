@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from conftest import FakeFetch, T, fixture_text
 
-from tune_sort.sources import FetchError
+from tune_sort.sources import FetchError, SourceError
 from tune_sort.sources.songsterr import SEARCH_URL, Songsterr
 
 
@@ -119,7 +120,11 @@ def test_exact_preferred_and_similar_fallback():
     assert m2.matched_title == "Schism (Live)"
 
 
-def test_failures_return_none():
+def test_parse_failure_returns_none():
     assert glookup("<html>nope</html>") is None
+
+
+def test_fetch_error_raises_source_error():
     fetch = FakeFetch({}, SEARCH_URL, FetchError("down"))
-    assert Songsterr(fetch, "guitar").lookup("Tool", "Schism") is None
+    with pytest.raises(SourceError):
+        Songsterr(fetch, "guitar").lookup("Tool", "Schism")

@@ -6,8 +6,10 @@ first (usually guitar) track's tuning.
 
 Guitar order: the highest-rated Pro tab whose meta.instruments mentions "guitar" and whose
 meta.tuning parses as a guitar tuning (source "ug-pro"), then the highest-rated "Tabs"
-result with a guitar meta.tuning (source "ug-tab"). Search paging stops once matching
-results of the instrument's tab type ("Bass Tabs" or "Tabs") have been found.
+result with a guitar meta.tuning (source "ug-tab"). Search paging stops once every tab
+type the source uses ("Pro", and "Bass Tabs" or "Tabs") has an exact match.
+
+A failed fetch raises SourceError; pages that don't parse are skipped.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from typing import Any, Optional
 from urllib.parse import urlencode
 
 from tune_sort import matching
-from tune_sort.sources import Fetch, FetchError, Match
+from tune_sort.sources import Fetch, FetchError, Match, SourceError
 from tune_sort.tuning import Instrument, parse_note_names
 
 SEARCH_URL = "https://www.ultimate-guitar.com/search.php"
@@ -40,7 +42,6 @@ _STEPS: dict[str, tuple[tuple[str, str, str], ...]] = {
     "bass": (("Pro", "ug-pro", "bass-only"), ("Bass Tabs", "ug-bass", "any")),
     "guitar": (("Pro", "ug-pro", "has-guitar"), ("Tabs", "ug-tab", "any")),
 }
-_TAB_TYPE = {"bass": "Bass Tabs", "guitar": "Tabs"}
 
 _STORE = re.compile(r'class="js-store"[^>]*?data-content="([^"]*)"')
 
@@ -108,14 +109,15 @@ class UltimateGuitar:
         exact: list[dict[str, Any]] = []
         similar: list[dict[str, Any]] = []
         # Results are paginated and Bass tabs often only start on a later page.
-        tab_type = _TAB_TYPE[self.instrument]
+        wanted = {step[0] for step in self._steps()}
         for page in range(1, MAX_SEARCH_PAGES + 1):
+            body = self._get(search_url(artist, title, page))
             try:
-                data = _page_data(self._fetch(search_url(artist, title, page)))
+                data = _page_data(body)
                 results = data.get("results")
                 if not isinstance(results, list):
                     raise ValueError("search page has no results list")
-            except (FetchError, ValueError, KeyError, TypeError):
+            except (ValueError, KeyError, TypeError):
                 if page == 1:
                     return None
                 break
@@ -126,7 +128,7 @@ class UltimateGuitar:
                     exact.append(r)
                 elif matches(r, matching.is_similar):
                     similar.append(r)
-            if any(r.get("type") == tab_type for r in exact + similar):
+            if wanted <= {r.get("type") for r in exact}:
                 break
             pagination = data.get("pagination")
             total = pagination.get("total") if isinstance(pagination, dict) else None
@@ -135,8 +137,7 @@ class UltimateGuitar:
         return self._best(exact, exact=True) or self._best(similar, exact=False)
 
     def _best(self, results: list[dict[str, Any]], exact: bool) -> Optional[Match]:
-        steps = [_STEPS[self.instrument][KINDS.index(k)] for k in self._kinds]
-        for tab_type, source, check in steps:
+        for tab_type, source, check in self._steps():
             for r in _rank(results, tab_type)[:MAX_PAGES_PER_TYPE]:
                 match = self._from_tab(r, source, check, exact)
                 if match:
@@ -147,12 +148,13 @@ class UltimateGuitar:
         self, result: dict[str, Any], source: str, check: str, exact: bool
     ) -> Optional[Match]:
         url = str(result["tab_url"])
+        body = self._get(url)
         try:
-            meta = _page_data(self._fetch(url))["tab_view"]["meta"]
+            meta = _page_data(body)["tab_view"]["meta"]
             if not _PAGE_CHECKS[check](meta):
                 return None
             tuning = parse_note_names(str(meta["tuning"]["value"]), self.instrument)
-        except (FetchError, ValueError, KeyError, TypeError, AttributeError):
+        except (ValueError, KeyError, TypeError, AttributeError):
             return None
         return Match(
             tuning=tuning,
@@ -162,3 +164,12 @@ class UltimateGuitar:
             matched_title=str(result.get("song_name") or ""),
             exact=exact,
         )
+
+    def _steps(self) -> list[tuple[str, str, str]]:
+        return [_STEPS[self.instrument][KINDS.index(k)] for k in self._kinds]
+
+    def _get(self, url: str) -> str:
+        try:
+            return self._fetch(url)
+        except FetchError as e:
+            raise SourceError(str(e)) from e
