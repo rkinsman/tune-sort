@@ -221,7 +221,7 @@ def _instrument_app(
         try:
             parsed = parse_name(tuning, instrument)
         except TuningParseError as e:
-            typer.echo(f"Error: tuning not understood: {tuning!r} ({e})", err=True)
+            typer.echo(f"Error: {bad_tuning_message(tuning, e)}", err=True)
             raise typer.Exit(1) from e
         cache = Cache(cache_path, instrument)
         try:
@@ -234,6 +234,11 @@ def _instrument_app(
 
 
 TUNING_EXAMPLES = {"bass": "(e.g. Drop D or B E A D G)", "guitar": "(e.g. Drop D or D A D G B E)"}
+
+
+def bad_tuning_message(text: str, error: TuningParseError) -> str:
+    """The message for a tuning that couldn't be parsed (shared with `tune-sort serve`)."""
+    return f"tuning not understood: {text!r} ({error})"
 
 
 def _load_order(instrument: Instrument, config_path: Path) -> list[str]:
