@@ -277,14 +277,13 @@ GOLIATH_CANDS = [
     make_match("B E A D", "ug-bass", True, artist="Karnivool", title="Goliath"),
     make_match("B E A D G C", "songsterr", True, artist="Karnivool", title="Goliath"),
 ]
-GOLIATH_LINE_1 = "  1) B Standard %s Bass %s B Standard (ug-bass: Karnivool %s Goliath)" % (
-    ARROW,
-    DASH,
-    DASH,
+GOLIATH_LINE_1 = (
+    "  1) B Standard (B E A D) %s Bass %s B Standard (ug-bass: Karnivool %s Goliath)"
+    % (ARROW, DASH, DASH)
 )
 GOLIATH_LINE_2 = (
-    "  2) B Standard %s Bass 6-String %s B Standard (songsterr: Karnivool %s Goliath)"
-    % (ARROW, DASH, DASH)
+    "  2) B Standard (B E A D G C) %s Bass 6-String %s B Standard "
+    "(songsterr: Karnivool %s Goliath)" % (ARROW, DASH, DASH)
 )
 
 PROMPT_WITH = "Choose 1-2, type a tuning (e.g. Drop D or B E A D G), s to skip, q to quit"
@@ -304,15 +303,38 @@ def test_review_shows_candidates(cache_path):
     out = result.output
     assert "Tool %s Schism" % DASH in out
     assert (
-        "1) Drop D %s Bass %s Drop D (ug-bass: Tool %s Schism (Live))" % (ARROW, DASH, DASH)
-        in out
-    )
-    assert (
-        "2) Eb Standard %s Bass %s Eb Standard (songsterr: Tool %s Schism (Demo))"
+        "  1) Drop D (D A D G) %s Bass %s Drop D (ug-bass: Tool %s Schism (Live))"
         % (ARROW, DASH, DASH)
         in out
     )
+    assert (
+        "  2) Eb Standard (Eb Ab Db Gb) %s Bass %s Eb Standard "
+        "(songsterr: Tool %s Schism (Demo))" % (ARROW, DASH, DASH)
+        in out
+    )
     assert "No tunings found." not in out
+
+
+def test_review_shows_notes_for_standard_tuning(cache_path):
+    _queue(cache_path, [("Billie Eilish", "bad guy", BILLIE_CANDS)])
+    result, _ = invoke(FakeMusic(), ["review"], cache_path, input="s\n")
+    assert (
+        "  1) E Standard (E A D G) %s Bass %s E Standard "
+        "(ug-bass: Billie Eilish %s bad guy)" % (ARROW, DASH, DASH)
+        in result.output
+    )
+
+
+def test_review_omits_notes_when_name_is_the_notes(cache_path):
+    cand = make_match("D A D Gb", "ug-bass", True, artist="Tool", title="Schism")
+    _queue(cache_path, [("Tool", "Schism", [cand])])
+    result, _ = invoke(FakeMusic(), ["review"], cache_path, input="s\n")
+    out = result.output
+    assert (
+        "  1) D A D Gb %s Bass %s D A D Gb (ug-bass: Tool %s Schism)" % (ARROW, DASH, DASH)
+        in out
+    )
+    assert "D A D Gb (D A D Gb)" not in out
 
 
 def test_review_goliath_candidates_show_string_count(cache_path):

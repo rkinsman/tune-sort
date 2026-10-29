@@ -240,3 +240,38 @@ def test_parse_name_reduces_guitar_tuning():
 
 def test_parse_name_six_string_standard_still_six():
     assert parse_name("6-string B Standard").string_count == 6
+
+
+# ----------------------------------------------------------------------- notes
+
+
+@pytest.mark.parametrize(
+    "pcs,expected",
+    [
+        ((4, 9, 2, 7), "E A D G"),
+        ((2, 9, 2, 7), "D A D G"),
+        ((1, 8, 1, 6), "C# G# C# F#"),
+        ((3, 8, 1, 6), "Eb Ab Db Gb"),
+        ((11, 4, 9, 2, 7), "B E A D G"),
+        ((11, 4, 9, 2, 7, 0), "B E A D G C"),
+        ((9, 4, 9, 2, 7), "A E A D G"),
+        ((2, 9, 2, 6), "D A D Gb"),
+        ((10, 5, 10, 3), "A# F A# D#"),
+        ((0, 7, 0, 5), "C G C F"),
+    ],
+)
+def test_notes(pcs, expected):
+    assert Tuning(pcs).notes == expected
+
+
+def test_notes_spelling_follows_name_not_input():
+    assert parse_note_names("Db Ab Db Gb").notes == "C# G# C# F#"
+    assert parse_note_names("D# G# C# F#").notes == "Eb Ab Db Gb"
+    assert parse_note_names("D A D F#").notes == "D A D Gb"
+
+
+def test_notes_from_name_and_midi():
+    assert parse_name("5-string B Standard").notes == "B E A D G"
+    assert parse_name("6-string B Standard").notes == "B E A D G C"
+    assert parse_name("5-string Drop A").notes == "A E A D G"
+    assert from_midi([26, 33, 38, 43]).notes == "D A D G"

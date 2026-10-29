@@ -23,8 +23,9 @@
 
   bass-sort review
       For each queued song print "<artist> – <title>", then numbered candidates
-      "  <i>) <tuning name> → <playlist name> (<source>: <matched artist> – <matched title>)"
-      (the playlist name shows the string count), or
+      "  <i>) <tuning name> (<notes>) → <playlist name> (<source>: <matched artist> – "
+      "<matched title>)", where <notes> is Tuning.notes; the " (<notes>)" part is left out
+      when the name already is the notes. The playlist name shows the string count. Or
       "  No tunings found." when there are none, then prompt:
           "Choose 1-<n>, type a tuning (e.g. Drop D or B E A D G), s to skip, q to quit"
           "Type a tuning (e.g. Drop D or B E A D G), s to skip, q to quit"  (no candidates)
@@ -213,7 +214,7 @@ def _review_items(cache: Cache, items: list[ReviewItem]) -> int:
             typer.echo("  No tunings found.")
         for i, m in enumerate(item.candidates, 1):
             typer.echo(
-                f"  {i}) {m.tuning.name} → {m.tuning.playlist_name} "
+                f"  {i}) {_with_notes(m.tuning)} → {m.tuning.playlist_name} "
                 f"({m.source}: {m.matched_artist} – {m.matched_title})"
             )
         chosen = _ask_tuning(len(item.candidates), [m.tuning for m in item.candidates])
@@ -237,6 +238,13 @@ def _confirm(question: str) -> bool:
     except (typer.Abort, EOFError):
         typer.echo("")
         return False
+
+
+def _with_notes(tuning: Tuning) -> str:
+    """E.g. "B Standard (B E A D)"; just the notes when they already are the name."""
+    if tuning.name == tuning.notes:
+        return tuning.name
+    return f"{tuning.name} ({tuning.notes})"
 
 
 def _described(tuning: Tuning) -> str:

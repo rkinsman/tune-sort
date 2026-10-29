@@ -43,12 +43,27 @@ class Tuning:
         Drop tunings spell their root with sharps (Drop C#); standard tunings and note
         lists use flats (Eb Standard, D A D Gb)."""
         pcs = self.pitch_classes
-        gaps = [(b - a) % 12 for a, b in zip(pcs, pcs[1:], strict=False)]
+        gaps = self._gaps()
         if gaps and all(g == FOURTH for g in gaps):
             return f"{FLAT_NAMES[pcs[0]]} Standard"
-        if gaps and gaps[0] == FIFTH and all(g == FOURTH for g in gaps[1:]):
+        if self._is_drop():
             return f"Drop {SHARP_NAMES[pcs[0]]}"
-        return " ".join(FLAT_NAMES[pc] for pc in pcs)
+        return self.notes
+
+    @property
+    def notes(self) -> str:
+        """The string notes lowest first, spelled as in `name`: sharps for drop tunings,
+        flats otherwise, e.g. "C# G# C# F#" for Drop C#, "Eb Ab Db Gb" for Eb Standard."""
+        spelling = SHARP_NAMES if self._is_drop() else FLAT_NAMES
+        return " ".join(spelling[pc] for pc in self.pitch_classes)
+
+    def _gaps(self) -> list[int]:
+        pcs = self.pitch_classes
+        return [(b - a) % 12 for a, b in zip(pcs, pcs[1:], strict=False)]
+
+    def _is_drop(self) -> bool:
+        gaps = self._gaps()
+        return bool(gaps) and gaps[0] == FIFTH and all(g == FOURTH for g in gaps[1:])
 
     @property
     def playlist_name(self) -> str:
