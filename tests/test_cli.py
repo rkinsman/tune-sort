@@ -6,8 +6,8 @@ import pytest
 from conftest import FakeMusic, FakeSource, T, make_match, make_track
 from typer.testing import CliRunner
 
-from bass_sort.cache import Cache, Entry
-from bass_sort.cli import make_app
+from tune_sort.cache import Cache, Entry
+from tune_sort.cli import make_app
 
 DASH = "–"
 ARROW = "→"

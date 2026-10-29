@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Optional, Protocol
 
-from bass_sort.tuning import Tuning
+from tune_sort.tuning import Tuning
 
 # Fetches a URL and returns the response body. Raises FetchError on failure.
 Fetch = Callable[[str], str]
@@ -25,7 +25,7 @@ class Match:
     url: str
     matched_artist: str
     matched_title: str
-    exact: bool  # artist and title match the song (see bass_sort.matching)
+    exact: bool  # artist and title match the song (see tune_sort.matching)
 
 
 class Source(Protocol):

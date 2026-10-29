@@ -1,4 +1,4 @@
-"""Shared fakes and builders for the bass-tuning-sorter tests."""
+"""Shared fakes and builders for the tune-sort tests."""
 from __future__ import annotations
 
 import html
@@ -8,9 +8,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
 
-from bass_sort.music import MusicError, Track
-from bass_sort.sources import FetchError, Match
-from bass_sort.tuning import Tuning
+from tune_sort.music import MusicError, Track
+from tune_sort.sources import FetchError, Match
+from tune_sort.tuning import Tuning
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -30,7 +30,7 @@ def fixture_text(rel: str) -> str:
 def T(text: str) -> Tuning:
     """Build a Tuning from space-separated note names (lowest first).
 
-    Deliberately independent of bass_sort.tuning's parsers.
+    Deliberately independent of tune_sort.tuning's parsers.
     """
     return Tuning(tuple(_PC[n.upper()] for n in text.split()))
 
@@ -213,7 +213,7 @@ def cache_path(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def cache(tmp_path: Path):  # type: ignore[no-untyped-def]
-    from bass_sort.cache import Cache
+    from tune_sort.cache import Cache
 
     c = Cache(tmp_path / "cache" / "c.db")
     yield c

@@ -6,10 +6,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Optional
 
-from bass_sort.cache import Cache, Entry
-from bass_sort.matching import part_title
-from bass_sort.sources import Match, Source
-from bass_sort.tuning import Tuning
+from tune_sort.cache import Cache, Entry
+from tune_sort.matching import part_title
+from tune_sort.sources import Match, Source
+from tune_sort.tuning import Tuning
 
 
 @dataclass(frozen=True)

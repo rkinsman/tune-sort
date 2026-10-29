@@ -3,10 +3,10 @@ from __future__ import annotations
 import pytest
 from conftest import FakeMusic, FakeSource, make_match, make_track
 
-from bass_sort.cache import Entry
-from bass_sort.music import MusicError
-from bass_sort.sorter import sort_playlist
-from bass_sort.tuning import Tuning
+from tune_sort.cache import Entry
+from tune_sort.music import MusicError
+from tune_sort.sorter import sort_playlist
+from tune_sort.tuning import Tuning
 
 DASH = "–"
 DROP_D = "Bass %s Drop D" % DASH
@@ -220,7 +220,7 @@ def test_on_progress_called_with_dry_run(cache):
 
 
 def test_on_progress_does_not_change_report(cache, tmp_path):
-    from bass_sort.cache import Cache
+    from tune_sort.cache import Cache
 
     plain_cache = Cache(tmp_path / "plain.db")
     try:

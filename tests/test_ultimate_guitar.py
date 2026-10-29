@@ -13,8 +13,8 @@ from conftest import (
     ug_tab_page,
 )
 
-from bass_sort.sources import FetchError
-from bass_sort.sources.ultimate_guitar import (
+from tune_sort.sources import FetchError
+from tune_sort.sources.ultimate_guitar import (
     MAX_PAGES_PER_TYPE,
     MAX_SEARCH_PAGES,
     SEARCH_URL,

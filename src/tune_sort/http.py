@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from bass_sort.sources import Fetch, FetchError
+from tune_sort.sources import Fetch, FetchError
 
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "

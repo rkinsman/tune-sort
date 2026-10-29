@@ -6,10 +6,10 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Optional
 
-from bass_sort.cache import Cache
-from bass_sort.music import Music, Track
-from bass_sort.resolver import Resolution, resolve
-from bass_sort.sources import Source
+from tune_sort.cache import Cache
+from tune_sort.music import Music, Track
+from tune_sort.resolver import Resolution, resolve
+from tune_sort.sources import Source
 
 
 @dataclass

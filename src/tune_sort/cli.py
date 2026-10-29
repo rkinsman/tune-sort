@@ -1,9 +1,9 @@
-"""Command-line interface: `bass-sort`.
+"""Command-line interface: `tune-sort`.
 
-  bass-sort playlists
+  tune-sort playlists
       Print each playlist name on its own line.
 
-  bass-sort sort PLAYLIST [--dry-run] [--source both|ug|songsterr] [--review/--no-review]
+  tune-sort sort PLAYLIST [--dry-run] [--source both|ug|songsterr] [--review/--no-review]
       Resolve each track and print one line per track:
           "<artist> – <title> → <playlist name> (<source>)"  or
           "<artist> – <title> → needs review"
@@ -21,7 +21,7 @@
       again with the same --dry-run and --source, printing the same per-track lines and
       summary, so the answered songs are added to their playlists.
 
-  bass-sort review
+  tune-sort review
       For each queued song print "<artist> – <title>", then numbered candidates
       "  <i>) <tuning name> (<notes>) → <playlist name> (<source>: <matched artist> – "
       "<matched title>)", where <notes> is Tuning.notes; the " (<notes>)" part is left out
@@ -36,7 +36,7 @@
       An answer that isn't understood prints a message and asks again.
       Prints "Nothing to review." when the queue is empty.
 
-  bass-sort set ARTIST TITLE TUNING
+  tune-sort set ARTIST TITLE TUNING
       Store a confirmed "manual" entry and print
       "Set <artist> – <title> to <tuning name> (<playlist name>)".
       Exits 1 with a message if TUNING isn't understood.
@@ -45,8 +45,8 @@ While `sort` works, a spinner showing "[<i>/<n>] Looking up <artist> – <title>
 on stderr, but only when stderr is a terminal; it is removed when the sort finishes.
 Otherwise (pipes, tests) nothing extra is printed.
 
-Every command accepts --cache PATH (default: $BASS_SORT_CACHE, else
-~/.cache/bass-tuning-sorter/tunings.db).
+Every command accepts --cache PATH (default: $TUNE_SORT_CACHE, else
+~/.cache/tune-sort/tunings.db).
 """
 
 from __future__ import annotations
@@ -60,12 +60,12 @@ import typer
 from rich.console import Console
 from rich.text import Text
 
-from bass_sort.cache import DEFAULT_PATH, Cache, Entry, ReviewItem
-from bass_sort.matching import normalise_artist, normalise_title
-from bass_sort.music import Music, MusicError, Track
-from bass_sort.sorter import Report, sort_playlist
-from bass_sort.sources import Source
-from bass_sort.tuning import Tuning, TuningParseError, parse_name
+from tune_sort.cache import DEFAULT_PATH, Cache, Entry, ReviewItem
+from tune_sort.matching import normalise_artist, normalise_title
+from tune_sort.music import Music, MusicError, Track
+from tune_sort.sorter import Report, sort_playlist
+from tune_sort.sources import Source
+from tune_sort.tuning import Tuning, TuningParseError, parse_name
 
 # Given "both", "ug" or "songsterr", returns the sources to ask, in order.
 SourcesFactory = Callable[[str], list[Source]]
@@ -78,14 +78,14 @@ class SourceChoice(StrEnum):
 
 
 CACHE_OPTION = typer.Option(
-    DEFAULT_PATH, "--cache", envvar="BASS_SORT_CACHE", help="Tuning cache file."
+    DEFAULT_PATH, "--cache", envvar="TUNE_SORT_CACHE", help="Tuning cache file."
 )
 
 
 def default_sources(which: str) -> list[Source]:
-    from bass_sort.http import make_fetch
-    from bass_sort.sources.songsterr import Songsterr
-    from bass_sort.sources.ultimate_guitar import UltimateGuitar
+    from tune_sort.http import make_fetch
+    from tune_sort.sources.songsterr import Songsterr
+    from tune_sort.sources.ultimate_guitar import UltimateGuitar
 
     fetch = make_fetch()
     chosen: list[Source] = []
@@ -270,6 +270,10 @@ def _ask_tuning(count: int, candidates: list[Tuning]) -> Optional[object]:
 
 
 def main() -> None:
-    from bass_sort.music import AppleMusic
+    from tune_sort.cache import migrate_legacy_cache
+    from tune_sort.music import AppleMusic
+
+    if migrate_legacy_cache():
+        typer.echo("Moved your tuning cache to ~/.cache/tune-sort/.", err=True)
 
     make_app(AppleMusic, default_sources)()

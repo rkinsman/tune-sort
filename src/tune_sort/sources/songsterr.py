@@ -6,9 +6,9 @@ import json
 from typing import Any, Optional
 from urllib.parse import urlencode
 
-from bass_sort import matching
-from bass_sort.sources import Fetch, FetchError, Match
-from bass_sort.tuning import Tuning, from_midi
+from tune_sort import matching
+from tune_sort.sources import Fetch, FetchError, Match
+from tune_sort.tuning import Tuning, from_midi
 
 SEARCH_URL = "https://www.songsterr.com/api/songs"
 SONG_URL = "https://www.songsterr.com/a/wa/song?id={}"

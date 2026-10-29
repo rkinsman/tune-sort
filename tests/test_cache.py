@@ -5,8 +5,8 @@ from pathlib import Path
 
 from conftest import T, make_match
 
-from bass_sort.cache import Cache, Entry, ReviewItem
-from bass_sort.tuning import Tuning
+from tune_sort.cache import Cache, Entry, ReviewItem, migrate_legacy_cache
+from tune_sort.tuning import Tuning
 
 # A 6-string guitar tuning built directly, as an older version may have stored it.
 OLD_GUITAR = Tuning((4, 9, 2, 7, 11, 4))
@@ -186,4 +186,62 @@ def test_real_six_string_bass_entry_unchanged(cache):
 def test_real_six_string_bass_candidate_unchanged(cache):
     cand = dataclasses.replace(make_match("E A D G"), tuning=SIX_STRING_BASS)
     cache.add_review("Tool", "Schism", [cand])
-    assert cache.review_items()[0].candidates == (cand,)
+    assert cache.review_items() == [ReviewItem("Tool", "Schism", (cand,))]
+
+
+# ------------------------------------------------------------ migrate_legacy_cache
+
+
+def test_migrate_moves_legacy_file(tmp_path):
+    legacy = tmp_path / "old" / "tunings.db"
+    new = tmp_path / "new" / "tunings.db"
+    legacy.parent.mkdir()
+    legacy.write_bytes(b"legacy-bytes")
+    assert migrate_legacy_cache(legacy, new) is True
+    assert new.read_bytes() == b"legacy-bytes"
+    assert not legacy.exists()
+
+
+def test_migrate_keeps_cache_contents(tmp_path):
+    legacy = tmp_path / "old" / "tunings.db"
+    new = tmp_path / "new" / "tunings.db"
+    entry = Entry(T("D A D G"), "ug-bass", True)
+    c = Cache(legacy)
+    c.put("Tool", "Schism", entry)
+    c.close()
+    assert migrate_legacy_cache(legacy, new) is True
+    c2 = Cache(new)
+    try:
+        assert c2.get("Tool", "Schism") == entry
+    finally:
+        c2.close()
+
+
+def test_migrate_never_overwrites_existing_new(tmp_path):
+    legacy = tmp_path / "old" / "tunings.db"
+    new = tmp_path / "new" / "tunings.db"
+    legacy.parent.mkdir()
+    new.parent.mkdir()
+    legacy.write_bytes(b"legacy")
+    new.write_bytes(b"current")
+    assert migrate_legacy_cache(legacy, new) is False
+    assert legacy.read_bytes() == b"legacy"
+    assert new.read_bytes() == b"current"
+
+
+def test_migrate_missing_legacy_does_nothing(tmp_path):
+    legacy = tmp_path / "old" / "tunings.db"
+    new = tmp_path / "new" / "tunings.db"
+    assert migrate_legacy_cache(legacy, new) is False
+    assert not new.exists()
+    assert not legacy.exists()
+    assert not new.parent.exists()
+
+
+def test_migrate_creates_parent_directories(tmp_path):
+    legacy = tmp_path / "legacy.db"
+    new = tmp_path / "a" / "b" / "c" / "tunings.db"
+    legacy.write_bytes(b"x")
+    assert migrate_legacy_cache(legacy, new) is True
+    assert new.is_file()
+    assert new.parent.is_dir()

@@ -4,8 +4,8 @@ import dataclasses
 
 from conftest import FakeSource, T, make_match
 
-from bass_sort.cache import Entry
-from bass_sort.resolver import resolve
+from tune_sort.cache import Entry
+from tune_sort.resolver import resolve
 
 
 def test_cache_hit_asks_no_source(cache):

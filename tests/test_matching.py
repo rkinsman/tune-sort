@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from bass_sort.matching import is_exact, is_similar, normalise_title, part_title
+from tune_sort.matching import is_exact, is_similar, normalise_title, part_title
 
 
 @pytest.mark.parametrize(

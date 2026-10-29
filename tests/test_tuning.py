@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from bass_sort.tuning import Tuning, TuningParseError, from_midi, parse_name, parse_note_names
+from tune_sort.tuning import Tuning, TuningParseError, from_midi, parse_name, parse_note_names
 
 DASH = "–"
 

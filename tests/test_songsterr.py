@@ -5,8 +5,8 @@ from urllib.parse import parse_qs, urlparse
 
 from conftest import FakeFetch, T, fixture_text
 
-from bass_sort.sources import FetchError
-from bass_sort.sources.songsterr import SEARCH_URL, Songsterr, search_url
+from tune_sort.sources import FetchError
+from tune_sort.sources.songsterr import SEARCH_URL, Songsterr, search_url
 
 
 def track(instrument_id, tuning, name="t"):

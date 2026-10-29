@@ -13,9 +13,9 @@ import re
 from typing import Any, Optional
 from urllib.parse import urlencode
 
-from bass_sort import matching
-from bass_sort.sources import Fetch, FetchError, Match
-from bass_sort.tuning import parse_note_names
+from tune_sort import matching
+from tune_sort.sources import Fetch, FetchError, Match
+from tune_sort.tuning import parse_note_names
 
 SEARCH_URL = "https://www.ultimate-guitar.com/search.php"
 MAX_PAGES_PER_TYPE = 3  # tab pages fetched per tab type before giving up on it

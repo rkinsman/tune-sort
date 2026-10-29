@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from bass_sort import matching
-from bass_sort.sources import Match
-from bass_sort.tuning import Tuning, from_pitch_classes
+from tune_sort import matching
+from tune_sort.sources import Match
+from tune_sort.tuning import Tuning, from_pitch_classes
 
-DEFAULT_PATH = Path.home() / ".cache" / "bass-tuning-sorter" / "tunings.db"
+DEFAULT_PATH = Path.home() / ".cache" / "tune-sort" / "tunings.db"
+# Where the cache lived before the project was renamed from bass-tuning-sorter.
+LEGACY_PATH = Path.home() / ".cache" / "bass-tuning-sorter" / "tunings.db"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS tunings (
@@ -45,6 +48,17 @@ class ReviewItem:
     candidates: tuple[Match, ...]  # fuzzy matches found, possibly empty
 
 
+def migrate_legacy_cache(legacy: Path = LEGACY_PATH, new: Path = DEFAULT_PATH) -> bool:
+    """Move the cache file from `legacy` to `new` (creating new's parent directories) when
+    `legacy` exists and `new` doesn't. Returns True if it moved the file. Never
+    overwrites an existing `new`."""
+    if new.exists() or not legacy.is_file():
+        return False
+    new.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(legacy), str(new))
+    return True
+
+
 def _key(artist: str, title: str) -> str:
     return matching.normalise_artist(artist) + "\x1f" + matching.normalise_title(title)
 
@@ -72,7 +86,7 @@ def _match_from_json(d: dict[str, Any]) -> Match:
 
 
 class Cache:
-    """Keyed by normalised artist and title (bass_sort.matching), so "Schism" and
+    """Keyed by normalised artist and title (tune_sort.matching), so "Schism" and
     "Schism (Remastered)" by "Tool" share an entry. Creates the file and parent
     directories if missing. Data survives reopening the same path.
 
