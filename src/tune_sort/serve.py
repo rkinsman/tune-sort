@@ -25,6 +25,8 @@ A sort writes `start` and `done` events (`{"id", "event", "data"}`) before its r
 `cancel` (args `{"id"}`) stops the running sort with that id before its next track and
 replies `{}`; the sort's report then has `cancelled: true`. End of input cancels a
 running sort the same way; `serve` returns once the running request has replied.
+A cancel that arrives after the sort has handled its last track but before its result is
+written still gets `{}`, and that result says `cancelled: false`.
 """
 
 from __future__ import annotations
@@ -340,7 +342,14 @@ HANDLERS: dict[str, Handler] = {
 
 
 def _write(stdout: TextIO, obj: dict[str, Any]) -> None:
-    stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    """Write `obj` as one line. Text that can't be encoded as UTF-8 (a lone surrogate
+    from a request's `\\ud800` escape) makes that line fall back to ASCII escapes."""
+    text = json.dumps(obj, ensure_ascii=False)
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        text = json.dumps(obj)
+    stdout.write(text + "\n")
     stdout.flush()
 
 
@@ -494,11 +503,15 @@ class _Server:
             id = request.id
             self.session.emit = self._emitter(id)
             reply = _run(self.session, request)
-            with self.lock:
-                _write(self.stdout, reply)
-                if self.running == id:
-                    self.running = None
-            request.finished.set()
+            try:
+                with self.lock:
+                    try:
+                        _write(self.stdout, reply)
+                    finally:
+                        if self.running == id:
+                            self.running = None
+            finally:
+                request.finished.set()
 
 
 def serve(

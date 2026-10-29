@@ -165,7 +165,10 @@ def make_app(music: Callable[[], Music], sources: SourcesFactory) -> typer.Typer
         # Imported here: tune_sort.serve imports from this module.
         from tune_sort.serve import serve
 
-        stdin, stdout = _utf8(sys.stdin), _utf8(sys.stdout)
+        # A line with bad UTF-8 still reaches the parser (and gets bad_request); text that
+        # can't be encoded is escaped rather than ending the helper.
+        stdin = _utf8(sys.stdin, "replace")
+        stdout = _utf8(sys.stdout, "backslashreplace")
         serve(stdin, stdout, music, sources, lambda i: Cache(cache_path, i), config_path)
 
     for instrument in INSTRUMENTS:
@@ -249,10 +252,11 @@ def _instrument_app(
     return app
 
 
-def _utf8(stream: TextIO) -> TextIO:
-    """`stream`, set to UTF-8 when it is a text wrapper that can be reconfigured."""
+def _utf8(stream: TextIO, errors: str) -> TextIO:
+    """`stream`, set to UTF-8 with `errors` when it is a text wrapper that can be
+    reconfigured."""
     if isinstance(stream, io.TextIOWrapper):
-        stream.reconfigure(encoding="utf-8")
+        stream.reconfigure(encoding="utf-8", errors=errors)
     return stream
 
 
