@@ -43,6 +43,13 @@ class Entry:
 
 
 @dataclass(frozen=True)
+class CachedSong:
+    artist: str  # display names as given to put (normalised for legacy rows)
+    title: str
+    entry: Entry
+
+
+@dataclass(frozen=True)
 class ReviewItem:
     artist: str
     title: str
@@ -139,6 +146,17 @@ class Cache:
                 ),
             )
             self._db.execute("DELETE FROM review WHERE song_key = ?", (key,))
+
+    def entries(self) -> list[CachedSong]:
+        """All entries for this cache's instrument, sorted case-insensitively by artist,
+        then title. Rows written before display names were stored use the normalised
+        names."""
+        raise NotImplementedError
+
+    def delete(self, artist: str, title: str) -> None:
+        """Remove the song's entry and its review-queue item, matching as get does.
+        Does nothing if the song is not cached."""
+        raise NotImplementedError
 
     def add_review(self, artist: str, title: str, candidates: list[Match]) -> None:
         """Queue a song for review, replacing its candidates if it is already queued."""
