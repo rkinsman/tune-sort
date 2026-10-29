@@ -6,10 +6,10 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Literal, Optional
 
-from tune_sort.cache import Cache
+from tune_sort.cache import Cache, Entry
 from tune_sort.music import Music, MusicError, Track
 from tune_sort.resolver import Resolution, resolve
-from tune_sort.sources import Source
+from tune_sort.sources import Match, Source
 
 Status = Literal["added", "already_present", "review", "lookup_failed", "add_error"]
 OnDone = Callable[[Track, Resolution, Status, Optional[str], Optional[str]], None]
@@ -121,3 +121,27 @@ def sort_playlist(
         done(track, resolution, "added", target)
 
     return report
+
+
+@dataclass(frozen=True)
+class TrackState:
+    track: Track
+    entry: Optional[Entry]
+    candidates: Optional[tuple[Match, ...]]
+
+    @property
+    def state(self) -> Literal["cached", "review", "unknown"]:
+        """The track's state: cached if it has a cache entry, else review if it is queued
+        for review, else unknown."""
+        if self.entry is not None:
+            return "cached"
+        if self.candidates is not None:
+            return "review"
+        return "unknown"
+
+
+def track_states(music: Music, playlist: str, cache: Cache) -> list[TrackState]:
+    """The tracks of `playlist`, in playlist order, each with its cache entry and review
+    candidates (None if it has none). Never queries a source and changes nothing.
+    Raises MusicError if the playlist cannot be read."""
+    raise NotImplementedError

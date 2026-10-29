@@ -16,8 +16,9 @@ from SOURCE_NAMES[instrument], and none twice.
 from __future__ import annotations
 
 import tomllib
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from tune_sort.tuning import Instrument
 
@@ -56,6 +57,20 @@ def load_order(instrument: Instrument, path: Path = CONFIG_PATH) -> list[str]:
         return _validated(section["order"], instrument)
     except ConfigError as e:
         raise ConfigError(f"{path}: [{instrument}] order: {e}") from e
+
+
+def save_order(
+    instrument: Instrument, order: Optional[Sequence[str]], path: Path = CONFIG_PATH
+) -> list[str]:
+    """Save `order` as the source order for `instrument` in the config file at `path`,
+    creating the file and its directories if needed and keeping the other instrument's
+    order. `order` None resets `instrument` to the default order. Returns the effective
+    order afterwards, as load_order would.
+
+    Raises ConfigError, leaving the file untouched, if `order` is invalid or the existing
+    file is not valid TOML or holds anything but [bass] and [guitar] tables with only an
+    `order` key (rewriting it would lose that content). The write is atomic."""
+    raise NotImplementedError
 
 
 def parse_order(text: str, instrument: Instrument) -> list[str]:
