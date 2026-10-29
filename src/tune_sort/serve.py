@@ -129,7 +129,9 @@ def _config(session: _Session, args: dict[str, Any]) -> Any:
 
 def _set_order(session: _Session, args: dict[str, Any]) -> Any:
     instrument = _instrument(args)
-    order = args.get("order")
+    if "order" not in args:
+        raise BadRequest("order is required (a list, or null for the default)")
+    order = args["order"]
     if order is not None and not (
         isinstance(order, list) and all(isinstance(n, str) for n in order)
     ):
@@ -229,9 +231,7 @@ def _handle(session: _Session, line: str) -> dict[str, Any]:
         handler = HANDLERS.get(cmd)
         if handler is None:
             raise BadRequest(f"unknown command: {cmd}")
-        args = request.get("args")
-        if args is None and cmd == "hello":
-            args = {}
+        args = request.get("args", {})
         if not isinstance(args, dict):
             raise BadRequest("args must be an object")
         return {"id": id, "result": handler(session, args)}
