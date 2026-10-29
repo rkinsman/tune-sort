@@ -28,6 +28,19 @@ class Match:
     exact: bool  # artist and title match the song (see tune_sort.matching)
 
 
+def memoize(fetch: Fetch) -> Fetch:
+    """Wrap a Fetch so each URL is fetched at most once; later calls return the stored
+    body. A FetchError is not stored: the next call for that URL tries again."""
+    bodies: dict[str, str] = {}
+
+    def memoized(url: str) -> str:
+        if url not in bodies:
+            bodies[url] = fetch(url)
+        return bodies[url]
+
+    return memoized
+
+
 class Source(Protocol):
     name: str
 

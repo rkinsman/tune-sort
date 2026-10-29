@@ -15,7 +15,7 @@ from __future__ import annotations
 import html as html_lib
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, Optional
 from urllib.parse import urlencode
 
@@ -77,10 +77,27 @@ def _rank(results: list[dict[str, Any]], tab_type: str) -> list[dict[str, Any]]:
     return sorted(of_type, key=lambda r: (r.get("rating") or 0, r.get("votes") or 0), reverse=True)
 
 
-class UltimateGuitar:
-    name = "ug"
+# kinds: "pro" is the Pro-tab step, "tab" the Bass tab (bass) or Tab (guitar) step.
+KINDS = ("pro", "tab")
 
-    def __init__(self, fetch: Fetch, instrument: Instrument = "bass") -> None:
+
+class UltimateGuitar:
+    """With the default kinds, `name` is "ug" and both steps are tried in order. With a
+    single kind it is one orderable source: name "ug-pro", or "ug-bass" / "ug-tab" for
+    the "tab" kind, and lookup only uses that step (same search, ranking, paging and
+    exact-before-similar rules)."""
+
+    def __init__(
+        self, fetch: Fetch, instrument: Instrument = "bass", kinds: Sequence[str] = KINDS
+    ) -> None:
+        unknown = set(kinds) - set(KINDS)
+        if unknown or not kinds:
+            raise ValueError(f"kinds must be taken from {KINDS}, got {tuple(kinds)}")
+        self._kinds = tuple(kinds)
+        if self._kinds == KINDS:
+            self.name = "ug"
+        else:
+            self.name = "-".join(_STEPS[instrument][KINDS.index(k)][1] for k in self._kinds)
         self._fetch = fetch
         self.instrument: Instrument = instrument
 
@@ -118,7 +135,8 @@ class UltimateGuitar:
         return self._best(exact, exact=True) or self._best(similar, exact=False)
 
     def _best(self, results: list[dict[str, Any]], exact: bool) -> Optional[Match]:
-        for tab_type, source, check in _STEPS[self.instrument]:
+        steps = [_STEPS[self.instrument][KINDS.index(k)] for k in self._kinds]
+        for tab_type, source, check in steps:
             for r in _rank(results, tab_type)[:MAX_PAGES_PER_TYPE]:
                 match = self._from_tab(r, source, check, exact)
                 if match:

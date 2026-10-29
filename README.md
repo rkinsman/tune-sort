@@ -47,7 +47,26 @@ uv run tune-sort guitar sort "My Playlist"
 uv run tune-sort guitar set "Led Zeppelin" "Kashmir" "DADGAD"
 ```
 
-`--source ug|songsterr|both` limits which sites are asked. The default is `both`.
+### Source order
+
+Sources are asked in the order above by default. To change it, create
+`~/.config/tune-sort/config.toml` (or point `$TUNE_SORT_CONFIG` at another file):
+
+```toml
+[bass]
+order = ["songsterr", "ug-bass", "ug-pro"]
+
+[guitar]
+order = ["ug-pro", "ug-tab", "songsterr"]
+```
+
+The names are `ug-pro`, `ug-bass` (bass) or `ug-tab` (guitar), and `songsterr`. Leave a
+name out to stop asking that source. When sources agree, the first one in the order gets the
+credit; when they disagree, the review lists them in this order.
+
+`uv run tune-sort config` shows the file in use and each instrument's order.
+`--order songsterr,ug-bass` overrides the file for one `sort`, and `--source ug|songsterr|both`
+then keeps only the Ultimate Guitar or Songsterr sources. The default is `both`.
 
 While sorting, a spinner shows which song is being looked up (`[3/22] Looking up …`). If
 any songs need review at the end, `sort` offers to review them right away (`--review` or

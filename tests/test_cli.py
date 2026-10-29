@@ -15,6 +15,9 @@ DROP_D = "Bass %s Drop D" % DASH
 G_DROP_D = "Guitar %s Drop D" % DASH
 B5_PLAYLIST = "Bass 5-String %s B Standard" % DASH
 
+BASS_DEFAULT = ["ug-pro", "ug-bass", "songsterr"]
+GUITAR_DEFAULT = ["ug-pro", "ug-tab", "songsterr"]
+
 A = make_track("A", "Tool", "Schism")
 B = make_track("B", "Nobody", "Nothing")
 C = make_track("C", "Opeth", "Deliverance")
@@ -24,16 +27,16 @@ runner = CliRunner()
 
 
 class Factory:
-    """Sources factory; records the (instrument, which) it is asked for."""
+    """Sources factory; records the (instrument, names) it is asked for."""
 
     def __init__(self, sources=None):
-        self.requested: List[Tuple[str, str]] = []
+        self.requested: List[Tuple[str, List[str]]] = []
         self.sources = sources if sources is not None else [
             FakeSource("s", {("Tool", "Schism"): make_match("D A D G", "ug-bass")})
         ]
 
-    def __call__(self, instrument, which):
-        self.requested.append((instrument, which))
+    def __call__(self, instrument, names):
+        self.requested.append((instrument, list(names)))
         return self.sources
 
 
@@ -53,9 +56,13 @@ def guitar_factory():
 
 
 def invoke(music, args, cache_path, factory=None, input=None):
+    """Run the CLI. `sort` calls get a missing --config file so the real one is never read."""
     factory = factory or Factory()
+    args = list(args)
+    if args[1:2] == ["sort"] and "--config" not in args:
+        args += ["--config", str(cache_path.parent / "missing.toml")]
     app = make_app(lambda: music, factory)
-    return runner.invoke(app, list(args) + ["--cache", str(cache_path)], input=input), factory
+    return runner.invoke(app, args + ["--cache", str(cache_path)], input=input), factory
 
 
 def test_playlists(cache_path):
@@ -145,15 +152,15 @@ def test_sort_missing_playlist(cache_path):
 def test_sort_source_option(cache_path):
     music = FakeMusic({"Road": [A]})
     _, f = invoke(music, ["bass", "sort", "Road"], cache_path)
-    assert f.requested == [("bass", "both")]
+    assert f.requested == [("bass", BASS_DEFAULT)]
     _, f = invoke(
         FakeMusic({"Road": [A]}), ["bass", "sort", "Road", "--source", "ug"], cache_path
     )
-    assert f.requested == [("bass", "ug")]
+    assert f.requested == [("bass", ["ug-pro", "ug-bass"])]
     _, f = invoke(
         FakeMusic({"Road": [A]}), ["bass", "sort", "Road", "--source", "songsterr"], cache_path
     )
-    assert f.requested == [("bass", "songsterr")]
+    assert f.requested == [("bass", ["songsterr"])]
 
 
 # ------------------------------------------------------ sort offers to review at the end
@@ -578,14 +585,18 @@ def test_guitar_sort(cache_path):
     assert "Created playlist: %s" % G_DROP_D in out
     assert music.playlists[G_DROP_D] == [A]
     assert not any(name.startswith("Bass") for name in music.playlists)
-    assert f.requested == [("guitar", "both")]
+    assert f.requested == [("guitar", GUITAR_DEFAULT)]
 
 
 def test_guitar_sort_source_option(cache_path):
     f = guitar_factory()
-    invoke(FakeMusic({"Road": [A]}), ["guitar", "sort", "Road", "--source", "songsterr"],
-           cache_path, factory=f)
-    assert f.requested == [("guitar", "songsterr")]
+    invoke(
+        FakeMusic({"Road": [A]}),
+        ["guitar", "sort", "Road", "--source", "songsterr"],
+        cache_path,
+        factory=f,
+    )
+    assert f.requested == [("guitar", ["songsterr"])]
 
 
 def test_guitar_sort_dry_run(cache_path):

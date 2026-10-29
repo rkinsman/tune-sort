@@ -12,7 +12,8 @@
       In prompts the example tuning is "(e.g. Drop D or B E A D G)" for bass and
       "(e.g. Drop D or D A D G B E)" for guitar.
 
-  sort PLAYLIST [--dry-run] [--source both|ug|songsterr] [--review/--no-review]
+  sort PLAYLIST [--dry-run] [--order NAMES] [--source both|ug|songsterr]
+       [--review/--no-review]
       Resolve each track and print one line per track:
           "<artist> – <title> → <playlist name> (<source>)"  or
           "<artist> – <title> → needs review"
@@ -21,8 +22,12 @@
           "Added <n> to <playlist>"            ("Would add <n> to <playlist>" with --dry-run)
           "Already present: <n>"
           "Needs review: <n>"
-      --source both (default) asks UG then Songsterr. Exits 1 with a message if PLAYLIST
-      doesn't exist.
+      Sources are asked in the order from the config file (tune_sort.config), or
+      --order NAMES for this run (comma-separated, e.g. "songsterr,ug-bass,ug-pro").
+      --source then keeps only UG sources (ug) or only Songsterr (songsterr); both
+      (default) keeps all. The resulting names go to the sources factory. Exits 1 with
+      a message if PLAYLIST doesn't exist, if the config file or --order is invalid
+      ("Error: …"), or if --source leaves no sources ("Error: no sources left …").
       If any songs need review, it then asks "Review <n> songs now? [y/N]" (default No).
       --review skips the question and reviews; --no-review skips the question and doesn't.
       Reviewing goes through this run's songs that need review, exactly as `review` does
@@ -54,6 +59,17 @@ While `sort` works, a spinner showing "[<i>/<n>] Looking up <artist> – <title>
 on stderr, but only when stderr is a terminal; it is removed when the sort finishes.
 Otherwise (pipes, tests) nothing extra is printed.
 
+  tune-sort config [--config PATH]
+      Print the config file path, "(not found, using defaults)" after it when missing,
+      then one line per instrument with its order:
+          "Config file: <path>"
+          "bass: ug-pro, ug-bass, songsterr"
+          "guitar: ug-pro, ug-tab, songsterr"
+      Exits 1 with "Error: …" if the file is invalid.
+
+`sort` and `config` accept --config PATH (default: $TUNE_SORT_CONFIG, else
+~/.config/tune-sort/config.toml).
+
 Every command accepts --cache PATH (default: $TUNE_SORT_CACHE, else
 ~/.cache/tune-sort/tunings.db).
 """
@@ -70,14 +86,16 @@ from rich.console import Console
 from rich.text import Text
 
 from tune_sort.cache import DEFAULT_PATH, Cache, Entry, ReviewItem
+from tune_sort.config import CONFIG_PATH, ConfigError, load_order, parse_order
 from tune_sort.matching import normalise_artist, normalise_title
 from tune_sort.music import Music, MusicError, Track
 from tune_sort.sorter import Report, sort_playlist
 from tune_sort.sources import Source
 from tune_sort.tuning import INSTRUMENTS, Instrument, Tuning, TuningParseError, parse_name
 
-# Given the instrument and "both", "ug" or "songsterr", returns the sources to ask, in order.
-SourcesFactory = Callable[[Instrument, str], list[Source]]
+# Given the instrument and source names in order (see tune_sort.config.SOURCE_NAMES),
+# returns those sources, in that order.
+SourcesFactory = Callable[[Instrument, list[str]], list[Source]]
 
 
 class SourceChoice(StrEnum):
@@ -86,23 +104,30 @@ class SourceChoice(StrEnum):
     songsterr = "songsterr"
 
 
+CONFIG_OPTION = typer.Option(
+    CONFIG_PATH, "--config", envvar="TUNE_SORT_CONFIG", help="Config file (source order)."
+)
 CACHE_OPTION = typer.Option(
     DEFAULT_PATH, "--cache", envvar="TUNE_SORT_CACHE", help="Tuning cache file."
 )
 
 
-def default_sources(instrument: Instrument, which: str) -> list[Source]:
+def default_sources(instrument: Instrument, names: list[str]) -> list[Source]:
     from tune_sort.http import make_fetch
+    from tune_sort.sources import memoize
     from tune_sort.sources.songsterr import Songsterr
     from tune_sort.sources.ultimate_guitar import UltimateGuitar
 
-    fetch = make_fetch()
-    chosen: list[Source] = []
-    if which in ("both", "ug"):
-        chosen.append(UltimateGuitar(fetch, instrument))
-    if which in ("both", "songsterr"):
-        chosen.append(Songsterr(fetch, instrument))
-    return chosen
+    # Memoized, so the UG Pro and UG tab sources share each song's search pages.
+    fetch = memoize(make_fetch())
+    by_name: dict[str, Source] = {
+        "ug-pro": UltimateGuitar(fetch, instrument, ("pro",)),
+        "ug-bass" if instrument == "bass" else "ug-tab": UltimateGuitar(
+            fetch, instrument, ("tab",)
+        ),
+        "songsterr": Songsterr(fetch, instrument),
+    }
+    return [by_name[name] for name in names]
 
 
 def make_app(music: Callable[[], Music], sources: SourcesFactory) -> typer.Typer:
@@ -114,6 +139,15 @@ def make_app(music: Callable[[], Music], sources: SourcesFactory) -> typer.Typer
         """List your playlists."""
         for name in music().list_playlists():
             typer.echo(name)
+
+    @app.command("config")
+    def show_config(config_path: Path = CONFIG_OPTION) -> None:
+        """Show the config file and the source order for each instrument."""
+        orders = {instrument: _load_order(instrument, config_path) for instrument in INSTRUMENTS}
+        missing = "" if config_path.exists() else " (not found, using defaults)"
+        typer.echo(f"Config file: {config_path}{missing}")
+        for instrument, order in orders.items():
+            typer.echo(f"{instrument}: {', '.join(order)}")
 
     for instrument in INSTRUMENTS:
         app.add_typer(
@@ -133,16 +167,21 @@ def _instrument_app(
     def sort(
         playlist: str,
         dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change."),
+        order: Optional[str] = typer.Option(
+            None, "--order", help="Source order for this run, e.g. songsterr,ug-pro."
+        ),
         source: SourceChoice = typer.Option(SourceChoice.both, "--source"),
         review: Optional[bool] = typer.Option(
             None, "--review/--no-review", help="Review songs that need it without asking."
         ),
         cache_path: Path = CACHE_OPTION,
+        config_path: Path = CONFIG_OPTION,
     ) -> None:
         """Sort PLAYLIST's songs into one playlist per tuning."""
+        names = _source_names(instrument, order, source, config_path)
         cache = Cache(cache_path, instrument)
         try:
-            chosen = sources(instrument, source.value)
+            chosen = sources(instrument, names)
             report = _sort_and_print(music(), playlist, chosen, cache, dry_run)
             if not report.review:
                 return
@@ -190,6 +229,36 @@ def _instrument_app(
 
 
 TUNING_EXAMPLES = {"bass": "(e.g. Drop D or B E A D G)", "guitar": "(e.g. Drop D or D A D G B E)"}
+
+
+def _load_order(instrument: Instrument, config_path: Path) -> list[str]:
+    try:
+        return load_order(instrument, config_path)
+    except ConfigError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from e
+
+
+def _source_names(
+    instrument: Instrument, order: Optional[str], source: SourceChoice, config_path: Path
+) -> list[str]:
+    """The source names to ask, from --order or the config file, filtered by --source."""
+    if order is None:
+        names = _load_order(instrument, config_path)
+    else:
+        try:
+            names = parse_order(order, instrument)
+        except ConfigError as e:
+            typer.echo(f"Error: --order: {e}", err=True)
+            raise typer.Exit(1) from e
+    if source is SourceChoice.ug:
+        names = [n for n in names if n.startswith("ug-")]
+    elif source is SourceChoice.songsterr:
+        names = [n for n in names if n == "songsterr"]
+    if not names:
+        typer.echo(f"Error: no sources left after --source {source.value}", err=True)
+        raise typer.Exit(1)
+    return names
 
 
 def _sort_and_print(
