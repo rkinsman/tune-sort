@@ -17,6 +17,7 @@ B5_PLAYLIST = "Bass 5-String %s B Standard" % DASH
 A = make_track("A", "Tool", "Schism")
 B = make_track("B", "Nobody", "Nothing")
 C = make_track("C", "Opeth", "Deliverance")
+GOLIATH = make_track("G", "Karnivool", "Goliath")
 
 runner = CliRunner()
 
@@ -272,6 +273,20 @@ BILLIE_CANDS = [
     make_match("D G C F", "songsterr", True, artist="Billie Eilish", title="bad guy"),
 ]
 
+GOLIATH_CANDS = [
+    make_match("B E A D", "ug-bass", True, artist="Karnivool", title="Goliath"),
+    make_match("B E A D G C", "songsterr", True, artist="Karnivool", title="Goliath"),
+]
+GOLIATH_LINE_1 = "  1) B Standard %s Bass %s B Standard (ug-bass: Karnivool %s Goliath)" % (
+    ARROW,
+    DASH,
+    DASH,
+)
+GOLIATH_LINE_2 = (
+    "  2) B Standard %s Bass 6-String %s B Standard (songsterr: Karnivool %s Goliath)"
+    % (ARROW, DASH, DASH)
+)
+
 PROMPT_WITH = "Choose 1-2, type a tuning (e.g. Drop D or B E A D G), s to skip, q to quit"
 PROMPT_NONE = "Type a tuning (e.g. Drop D or B E A D G), s to skip, q to quit"
 
@@ -288,9 +303,58 @@ def test_review_shows_candidates(cache_path):
     assert result.exit_code == 0
     out = result.output
     assert "Tool %s Schism" % DASH in out
-    assert "1) Drop D (ug-bass: Tool %s Schism (Live))" % DASH in out
-    assert "2) Eb Standard (songsterr: Tool %s Schism (Demo))" % DASH in out
+    assert (
+        "1) Drop D %s Bass %s Drop D (ug-bass: Tool %s Schism (Live))" % (ARROW, DASH, DASH)
+        in out
+    )
+    assert (
+        "2) Eb Standard %s Bass %s Eb Standard (songsterr: Tool %s Schism (Demo))"
+        % (ARROW, DASH, DASH)
+        in out
+    )
     assert "No tunings found." not in out
+
+
+def test_review_goliath_candidates_show_string_count(cache_path):
+    _queue(cache_path, [("Karnivool", "Goliath", GOLIATH_CANDS)])
+    result, _ = invoke(FakeMusic(), ["review"], cache_path, input="s\n")
+    assert result.exit_code == 0, result.output
+    assert GOLIATH_LINE_1 in result.output
+    assert GOLIATH_LINE_2 in result.output
+
+
+def test_review_goliath_pick_six_string(cache_path):
+    _queue(cache_path, [("Karnivool", "Goliath", GOLIATH_CANDS)])
+    result, _ = invoke(FakeMusic(), ["review"], cache_path, input="2\n")
+    assert result.exit_code == 0, result.output
+    e = _entry(cache_path, "Karnivool", "Goliath")
+    assert e == Entry(T("B E A D G C"), "manual", True)
+    assert e.tuning.string_count == 6
+    assert _queued(cache_path) == []
+
+
+def test_review_goliath_pick_four_string(cache_path):
+    _queue(cache_path, [("Karnivool", "Goliath", GOLIATH_CANDS)])
+    result, _ = invoke(FakeMusic(), ["review"], cache_path, input="1\n")
+    assert result.exit_code == 0, result.output
+    e = _entry(cache_path, "Karnivool", "Goliath")
+    assert e is not None
+    assert e.tuning == T("B E A D")
+    assert e.tuning.string_count == 4
+
+
+def test_sort_review_step_shows_string_count_in_candidates(cache_path):
+    ug = FakeSource("ug", {("Karnivool", "Goliath"): GOLIATH_CANDS[0]})
+    sg = FakeSource("songsterr", {("Karnivool", "Goliath"): GOLIATH_CANDS[1]})
+    music = FakeMusic({"Road": [GOLIATH]})
+    result, _ = invoke(
+        music, ["sort", "Road", "--review"], cache_path, factory=Factory([ug, sg]), input="s\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert GOLIATH_LINE_1 in result.output
+    assert GOLIATH_LINE_2 in result.output
+    # The two exact matches disagree on string count, so nothing is sorted.
+    assert _entry(cache_path, "Karnivool", "Goliath") is None
 
 
 def test_review_prompt_with_candidates(cache_path):
