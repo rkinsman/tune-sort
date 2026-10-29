@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Literal, Optional
 
 from tune_sort.cache import Cache
 from tune_sort.music import Music, MusicError, Track
 from tune_sort.resolver import Resolution, resolve
 from tune_sort.sources import Source
+
+Status = Literal["added", "already_present", "review", "lookup_failed", "add_error"]
+OnDone = Callable[[Track, Resolution, Status, Optional[str], Optional[str]], None]
 
 
 @dataclass
@@ -21,6 +24,7 @@ class Report:
     review: list[Track] = field(default_factory=list)
     lookup_failed: list[Track] = field(default_factory=list)  # retried on the next sort
     add_errors: list[tuple[Track, str, str]] = field(default_factory=list)  # track, playlist, error
+    cancelled: bool = False  # True if should_stop ended the sort early
 
 
 def sort_playlist(
@@ -31,6 +35,8 @@ def sort_playlist(
     dry_run: bool = False,
     on_progress: Optional[Callable[[int, int, Track], None]] = None,
     recheck: bool = False,
+    should_stop: Optional[Callable[[], bool]] = None,
+    on_done: Optional[OnDone] = None,
 ) -> Report:
     """Resolve every track in `playlist` and add each resolved track to the playlist named
     by its tuning's `playlist_name`, creating that playlist if needed.
@@ -46,7 +52,18 @@ def sort_playlist(
 
     Tracks whose lookup failed go in `lookup_failed`. A MusicError while adding a track is
     recorded in `add_errors` and the sort carries on. `recheck` is passed to resolve.
+
+    should_stop, if given, is called at the top of each loop iteration, before on_progress.
+    If it returns True the sort stops, the tracks not yet resolved are left alone, and
+    `Report.cancelled` is True.
+
+    on_done, if given, is called once per track, in order, after its outcome is recorded, as
+    on_done(track, resolution, status, playlist, error). status is one of "added",
+    "already_present", "review", "lookup_failed" or "add_error". playlist is the target for
+    "added", "already_present" and "add_error", else None. error is set only for "add_error".
     """
+    if should_stop is not None or on_done is not None:
+        raise NotImplementedError("should_stop and on_done are not implemented yet")
     report = Report()
     tracks = music.get_tracks(playlist)
     existing = set(music.list_playlists())
