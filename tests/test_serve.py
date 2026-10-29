@@ -4,11 +4,12 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List
 
 from tests.conftest import FakeMusic, T, make_match, make_track
 from tune_sort.cache import Cache, Entry
 from tune_sort.serve import PROTOCOL_VERSION, serve
+from tune_sort.tuning import Instrument
 
 DASH = "–"
 BASS_DEFAULT = ["ug-pro", "ug-bass", "songsterr"]
@@ -25,7 +26,9 @@ A = make_track("A", "Tool", "Schism")
 B = make_track("B", "Opeth", "Deliverance")
 C = make_track("C", "Rush", "YYZ")
 
-Request = Union[Dict[str, Any], str]
+OPETH_MATCH = make_match("D A D G", artist="Opeth", title="Deliverance")
+
+Request = Dict[str, Any] | str
 
 
 class BoomMusic(FakeMusic):
@@ -40,8 +43,8 @@ def req(id: int, cmd: str, **args: Any) -> Dict[str, Any]:
 def run_raw(
     tmp_path: Path,
     requests: List[Request],
-    music: Optional[FakeMusic] = None,
-    config_path: Optional[Path] = None,
+    music: FakeMusic | None = None,
+    config_path: Path | None = None,
 ) -> str:
     lines = [r if isinstance(r, str) else json.dumps(r) for r in requests]
     stdin = io.StringIO("".join(line + "\n" for line in lines))
@@ -74,7 +77,7 @@ def result(tmp_path: Path, request: Request, **kw: Any) -> Any:
     return reply["result"]
 
 
-def seed(tmp_path: Path, instrument: str = "bass") -> Cache:
+def seed(tmp_path: Path, instrument: Instrument = "bass") -> Cache:
     return Cache(tmp_path / "t.db", instrument)
 
 
@@ -108,7 +111,11 @@ def test_returns_at_eof(tmp_path):
 
 def test_replies_one_line_each_utf8(tmp_path):
     music = FakeMusic({"Sigur Rós": [make_track("S", "Sigur Rós", "Hoppípolla")]})
-    out = run_raw(tmp_path, [req(1, "playlists"), req(2, "tracks", instrument="bass", playlist="Sigur Rós")], music=music)
+    out = run_raw(
+        tmp_path,
+        [req(1, "playlists"), req(2, "tracks", instrument="bass", playlist="Sigur Rós")],
+        music=music,
+    )
     assert "Sigur Rós" in out
     assert "\\u" not in out
     lines = out.splitlines()
@@ -129,7 +136,7 @@ def test_playlists(tmp_path):
 def test_tracks_with_states(tmp_path):
     c = seed(tmp_path)
     c.put("Tool", "Schism", Entry(T("D A D G"), "ug-bass", True))
-    c.add_review("Opeth", "Deliverance", [make_match("D A D G", artist="Opeth", title="Deliverance")])
+    c.add_review("Opeth", "Deliverance", [OPETH_MATCH])
     c.close()
     got = result(tmp_path, req(1, "tracks", instrument="bass", playlist="P"))
     assert got == [
@@ -260,7 +267,7 @@ def test_set_order_invalid_is_config_error(tmp_path):
 
 def test_review_list(tmp_path):
     c = seed(tmp_path)
-    c.add_review("Opeth", "Deliverance", [make_match("D A D G", artist="Opeth", title="Deliverance")])
+    c.add_review("Opeth", "Deliverance", [OPETH_MATCH])
     c.close()
     got = result(tmp_path, req(1, "review_list", instrument="bass"))
     assert got == [
@@ -391,7 +398,7 @@ def test_entries_per_instrument(tmp_path):
 
 def test_set_clears_review(tmp_path):
     c = seed(tmp_path)
-    c.add_review("Opeth", "Deliverance", [make_match("D A D G", artist="Opeth", title="Deliverance")])
+    c.add_review("Opeth", "Deliverance", [OPETH_MATCH])
     c.close()
     replies = run(
         tmp_path,
