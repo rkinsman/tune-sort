@@ -1,0 +1,349 @@
+[
+ {
+  "songId": 6700,
+  "artistId": 2071,
+  "artist": "Tool",
+  "title": "Schism",
+  "hasChords": true,
+  "hasPlayer": true,
+  "tracks": [
+   {
+    "instrumentId": 70,
+    "instrument": "Bassoon",
+    "views": 2723,
+    "name": "Maynard James Keenan | Vocals",
+    "tuning": [
+     64,
+     59,
+     55,
+     50,
+     45,
+     38
+    ],
+    "hash": "vocals_KJIkFlUe"
+   },
+   {
+    "instrumentId": 30,
+    "instrument": "Distortion Guitar",
+    "views": 528044,
+    "name": "Adam Jones | 1979 Gibson Les Paul Custom Silverburst | Lead Guitar",
+    "tuning": [
+     64,
+     59,
+     55,
+     50,
+     45,
+     38
+    ],
+    "difficulty": 3,
+    "hash": "guitar_ZxSwx5by"
+   },
+   {
+    "instrumentId": 30,
+    "instrument": "Distortion Guitar",
+    "views": 8113,
+    "name": "Adam Jones | 1979 Gibson Les Paul Custom Silverburst | Double Track/Delay",
+    "tuning": [
+     64,
+     59,
+     55,
+     50,
+     45,
+     38
+    ],
+    "difficulty": 3,
+    "hash": "guitar_91YKyrGl"
+   },
+   {
+    "instrumentId": 34,
+    "instrument": "Electric Bass (pick)",
+    "views": 633324,
+    "name": "Justin Chancellor | Wal Mark II 4-string | Bass",
+    "tuning": [
+     43,
+     38,
+     33,
+     26
+    ],
+    "difficulty": 5,
+    "hash": "bass_1uBm6D6S"
+   },
+   {
+    "instrumentId": 34,
+    "instrument": "Electric Bass (pick)",
+    "views": 1341,
+    "name": "Justin Chancellor | Wal Mark II 4-string | Bass Whammy Effect",
+    "tuning": [
+     43,
+     38,
+     33,
+     26
+    ],
+    "difficulty": 3,
+    "hash": "guitar_Xruy9Ns1"
+   },
+   {
+    "instrumentId": 82,
+    "instrument": "Lead 3 (calliope)",
+    "views": 1,
+    "name": "Danny Carey | Samples",
+    "tuning": [
+     64,
+     59,
+     55,
+     50,
+     45,
+     40
+    ],
+    "hash": "other_y2tQ0nBG"
+   },
+   {
+    "instrumentId": 80,
+    "instrument": "Lead 1 (square)",
+    "views": 4,
+    "name": "Danny Carey | Samples",
+    "tuning": [
+     64,
+     59,
+     55,
+     50,
+     45,
+     40
+    ],
+    "hash": "other_0cRWEJUB"
+   },
+   {
+    "instrumentId": 1024,
+    "instrument": "Drums",
+    "views": 71830,
+    "name": "Danny Carey | 1989 Sonor Signature Bubinga | Drums",
+    "difficulty": 6,
+    "hash": "drums_cm2zJC2K"
+   }
+  ],
+  "defaultTrack": 3,
+  "popularTrack": 3,
+  "isJunk": false,
+  "popularTrackGuitar": 1,
+  "popularTrackBass": 3,
+  "popularTrackDrum": 7,
+  "popularTrackVocals": 0
+ },
+ {
+  "songId": 715733,
+  "artistId": 2071,
+  "artist": "Tool",
+  "title": "Schism [Bass Transcribed to Guitar]",
+  "hasChords": false,
+  "hasPlayer": true,
+  "tracks": [
+   {
+    "instrumentId": 70,
+    "instrument": "Bassoon",
+    "views": 0,
+    "name": "Maynard James Keenan (Vocals)",
+    "tuning": [
+     64,
+     59,
+     55,
+     50,
+     45,
+     40
+    ],
+    "hash": "vocals_2QxLd4Yy"
+   },
+   {
+    "instrumentId": 30,
+    "instrument": "Distortion Guitar",
+    "views": 1346,
+    "name": "Adam Jones (Guitar I)",
+    "tuning": [
+     64,
+     59,
+     55,
+     50,
+     45,
+     38
+    ],
+    "difficulty": 3,
+    "hash": "guitar_WMZW7cjT"
+   },
+   {
+    "instrumentId": 30,
+    "instrument": "Distortion Guitar",
+    "views": 14,
+    "name": "Adam Jones (Guitar II)",
+    "tuning": [
+     64,
+     59,
+     55,
+     50,
+     45,
+     38
+    ],
+    "difficulty": 3,
+    "hash": "guitar_k45dhVPp"
+   },
+   {
+    "instrumentId": 27,
+    "instrument": "Electric Guitar (clean)",
+    "views": 287,
+    "name": "Adam Jones (Guitar III)",
+    "tuning": [
+     64,
+     59,
+     55,
+     50,
+     45,
+     40
+    ],
+    "difficulty": 3,
+    "hash": "guitar_YSq55bnm"
+   },
+   {
+    "instrumentId": 30,
+    "instrument": "Distortion Guitar",
+    "views": 4,
+    "name": "Bass Overdrive/Whammy",
+    "tuning": [
+     43,
+     38,
+     33,
+     26
+    ],
+    "difficulty": 7,
+    "hash": "guitar_ZLxIRA1K"
+   },
+   {
+    "instrumentId": 27,
+    "instrument": "Electric Guitar (clean)",
+    "views": 411,
+    "name": "Justin Chancellor",
+    "tuning": [
+     64,
+     59,
+     55,
+     50,
+     45,
+     38
+    ],
+    "difficulty": 3,
+    "hash": "guitar_UUXAT1o4"
+   },
+   {
+    "instrumentId": 1024,
+    "instrument": "Drums",
+    "views": 18,
+    "name": "Danny Carey",
+    "difficulty": 6,
+    "hash": "drums_vsg0okai"
+   }
+  ],
+  "defaultTrack": 1,
+  "popularTrack": 1,
+  "isJunk": false,
+  "popularTrackGuitar": 1,
+  "popularTrackDrum": 6,
+  "popularTrackVocals": 0
+ },
+ {
+  "songId": 786080,
+  "artistId": 2071,
+  "artist": "Tool",
+  "title": "Schism - Adam Jones with backing",
+  "hasChords": false,
+  "hasPlayer": true,
+  "tracks": [
+   {
+    "instrumentId": 70,
+    "instrument": "Bassoon",
+    "views": 16,
+    "name": "Maynard James Keenan (Vocals)",
+    "tuning": [
+     64,
+     59,
+     55,
+     50,
+     45,
+     40
+    ],
+    "hash": "vocals_oNzdE3ld"
+   },
+   {
+    "instrumentId": 30,
+    "instrument": "Distortion Guitar",
+    "views": 1232,
+    "name": "Adam Jones (Guitar I)",
+    "tuning": [
+     64,
+     59,
+     55,
+     50,
+     45,
+     38
+    ],
+    "difficulty": 3,
+    "hash": "guitar_NiGRPAmw"
+   },
+   {
+    "instrumentId": 30,
+    "instrument": "Distortion Guitar",
+    "views": 21,
+    "name": "Adam Jones (Guitar II)",
+    "tuning": [
+     64,
+     59,
+     55,
+     50,
+     45,
+     38
+    ],
+    "difficulty": 3,
+    "hash": "guitar_cZTzi9yK"
+   },
+   {
+    "instrumentId": 34,
+    "instrument": "Electric Bass (pick)",
+    "views": 1288,
+    "name": "Justin Chancellor",
+    "tuning": [
+     43,
+     38,
+     33,
+     26
+    ],
+    "difficulty": 5,
+    "hash": "bass_4uNyF0vf"
+   },
+   {
+    "instrumentId": 30,
+    "instrument": "Distortion Guitar",
+    "views": 6,
+    "name": "Bass Overdrive/Whammy",
+    "tuning": [
+     43,
+     38,
+     33,
+     26
+    ],
+    "difficulty": 7,
+    "hash": "guitar_rhxvNVmf"
+   },
+   {
+    "instrumentId": 1024,
+    "instrument": "Drums",
+    "views": 110,
+    "name": "Danny Carey",
+    "difficulty": 6,
+    "hash": "drums_RezLglOR"
+   }
+  ],
+  "defaultTrack": 3,
+  "popularTrack": 3,
+  "isJunk": false,
+  "popularTrackGuitar": 1,
+  "popularTrackBass": 3,
+  "popularTrackDrum": 5,
+  "popularTrackVocals": 0
+ }
+]
