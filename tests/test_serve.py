@@ -262,6 +262,35 @@ def test_set_order_invalid_is_config_error(tmp_path):
     assert replies[1]["result"]["order"]["bass"] == BASS_DEFAULT
 
 
+def test_set_order_missing_order_is_bad_request_and_keeps_saved_order(tmp_path):
+    path = tmp_path / "config.toml"
+    replies = run(
+        tmp_path,
+        [
+            req(1, "set_order", instrument="bass", order=["songsterr", "ug-bass"]),
+            req(2, "set_order", instrument="bass"),
+            req(3, "config"),
+        ],
+        config_path=path,
+    )
+    assert replies[0] == {"id": 1, "result": ["songsterr", "ug-bass"]}
+    assert replies[1]["id"] == 2
+    assert replies[1]["error"]["kind"] == "bad_request"
+    assert replies[2]["result"]["order"]["bass"] == ["songsterr", "ug-bass"]
+
+
+def test_set_order_missing_order_without_saved_order_changes_nothing(tmp_path):
+    path = tmp_path / "config.toml"
+    replies = run(
+        tmp_path,
+        [req(1, "set_order", instrument="guitar"), req(2, "config")],
+        config_path=path,
+    )
+    assert replies[0]["error"]["kind"] == "bad_request"
+    assert replies[1]["result"]["order"]["guitar"] == GUITAR_DEFAULT
+    assert replies[1]["result"]["exists"] is False
+
+
 # --------------------------------------------------------------- review_list
 
 
@@ -466,6 +495,33 @@ def test_missing_arg_bad_request(tmp_path):
 
 def test_missing_args_object_bad_request(tmp_path):
     reply = one(tmp_path, {"id": 2, "cmd": "tracks"})
+    assert reply["error"]["kind"] == "bad_request"
+
+
+def test_playlists_without_args_key(tmp_path):
+    music = FakeMusic({"One": [], "Two": [A]})
+    reply = one(tmp_path, {"id": 3, "cmd": "playlists"}, music=music)
+    assert reply == {"id": 3, "result": ["One", "Two"]}
+
+
+def test_config_without_args_key(tmp_path):
+    path = tmp_path / "config.toml"
+    reply = one(tmp_path, {"id": 4, "cmd": "config"}, config_path=path)
+    assert reply["id"] == 4
+    assert "error" not in reply
+    assert reply["result"]["path"] == str(path)
+    assert reply["result"]["order"] == {"bass": BASS_DEFAULT, "guitar": GUITAR_DEFAULT}
+
+
+def test_args_present_but_list_is_bad_request(tmp_path):
+    reply = one(tmp_path, {"id": 6, "cmd": "playlists", "args": []})
+    assert reply["id"] == 6
+    assert reply["error"]["kind"] == "bad_request"
+
+
+def test_args_present_but_string_is_bad_request(tmp_path):
+    reply = one(tmp_path, {"id": 7, "cmd": "hello", "args": "x"})
+    assert reply["id"] == 7
     assert reply["error"]["kind"] == "bad_request"
 
 
