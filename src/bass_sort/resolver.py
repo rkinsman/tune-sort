@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from bass_sort.cache import Cache, Entry
+from bass_sort.matching import part_title
 from bass_sort.sources import Match, Source
 from bass_sort.tuning import Tuning
 
@@ -32,19 +33,31 @@ def resolve(artist: str, title: str, sources: Sequence[Source], cache: Cache) ->
        in the cache and returned, unless another source's exact match has a different
        tuning: then the song is queued for review with the exact matches followed by
        the non-exact ones.
-    3. With no exact match, the song is queued for review with the non-exact matches.
+    3. If no source matched exactly and the title has a part name
+       (matching.part_title, e.g. "Retrospect" for "Of Matter - Retrospect"), every
+       source is asked again with the part name, and exact matches from that second
+       round count as exact under rule 2. Non-exact matches from both rounds are kept,
+       dropping any with the same source and url as a match already kept. The result is
+       cached under the original title.
+    4. With still no exact match, the song is queued for review with the non-exact
+       matches.
     Songs queued for review are returned with tuning None.
     """
     cached = cache.get(artist, title)
     if cached is not None:
         return Resolution(artist, title, cached.tuning, "cache")
 
-    exact: list[Match] = []
-    fuzzy: list[Match] = []
-    for source in sources:
-        match = source.lookup(artist, title)
-        if match is not None:
-            (exact if match.exact else fuzzy).append(match)
+    exact, fuzzy = _ask(sources, artist, title)
+    part = part_title(title)
+    if not exact and part is not None:
+        exact, more_fuzzy = _ask(sources, artist, part)
+        seen = {(m.source, m.url) for m in exact}
+        kept: list[Match] = []
+        for m in fuzzy + more_fuzzy:
+            if (m.source, m.url) not in seen:
+                seen.add((m.source, m.url))
+                kept.append(m)
+        fuzzy = kept
 
     if exact and all(m.tuning == exact[0].tuning for m in exact):
         primary = exact[0]
@@ -54,3 +67,14 @@ def resolve(artist: str, title: str, sources: Sequence[Source], cache: Cache) ->
     candidates = exact + fuzzy
     cache.add_review(artist, title, candidates)
     return Resolution(artist, title, None, None, tuple(candidates))
+
+
+def _ask(sources: Sequence[Source], artist: str, title: str) -> tuple[list[Match], list[Match]]:
+    """Ask every source; return (exact matches, non-exact matches), each in source order."""
+    exact: list[Match] = []
+    fuzzy: list[Match] = []
+    for source in sources:
+        match = source.lookup(artist, title)
+        if match is not None:
+            (exact if match.exact else fuzzy).append(match)
+    return exact, fuzzy

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+
 from conftest import FakeSource, T, make_match
 
 from bass_sort.cache import Entry
@@ -169,3 +171,122 @@ def test_no_matches_at_all_needs_review(cache):
 
 def test_no_sources_needs_review(cache):
     assert resolve("Tool", "Schism", [], cache).needs_review is True
+
+
+# --------------------------------------------- second round with the part name
+
+ARTIST = "TesseracT"
+FULL = "Of Matter - Retrospect"
+PART = "Retrospect"
+A_STD_5 = "A D G C F"
+
+
+def _with_url(match, url):
+    return dataclasses.replace(match, url=url)
+
+
+def test_part_name_round_accepts_agreeing_exact_matches(cache):
+    ug = FakeSource(
+        "ug",
+        {
+            (ARTIST, FULL): None,
+            (ARTIST, PART): make_match(A_STD_5, "ug-bass", True, ARTIST, PART),
+        },
+    )
+    sg = FakeSource(
+        "songsterr",
+        {
+            (ARTIST, FULL): make_match(A_STD_5, "songsterr", False, ARTIST, PART),
+            (ARTIST, PART): make_match(A_STD_5, "songsterr", True, ARTIST, PART),
+        },
+    )
+    r = resolve(ARTIST, FULL, [ug, sg], cache)
+    assert r.needs_review is False
+    assert r.source == "ug-bass"
+    assert r.tuning == T(A_STD_5)
+    assert r.tuning.string_count == 5
+    assert (r.artist, r.title) == (ARTIST, FULL)
+    assert cache.get(ARTIST, FULL) == Entry(T(A_STD_5), "ug-bass", False)
+    assert cache.review_items() == []
+    assert ug.calls == [(ARTIST, FULL), (ARTIST, PART)]
+    assert sg.calls == [(ARTIST, FULL), (ARTIST, PART)]
+
+
+def test_part_name_round_disagreement_goes_to_review(cache):
+    ug_exact = make_match(A_STD_5, "ug-bass", True, ARTIST, PART)
+    sg_exact = make_match("B E A D G", "songsterr", True, ARTIST, PART)
+    ug_fuzzy1 = _with_url(
+        make_match("C G C F", "ug-pro", False, ARTIST, "Of Matter"), "https://example.test/ug-f1"
+    )
+    # Same (source, url) as the second-round exact songsterr match: must be dropped.
+    sg_fuzzy1 = make_match("B E A D G", "songsterr", False, ARTIST, PART)
+    ug = FakeSource("ug", {(ARTIST, FULL): ug_fuzzy1, (ARTIST, PART): ug_exact})
+    sg = FakeSource("songsterr", {(ARTIST, FULL): sg_fuzzy1, (ARTIST, PART): sg_exact})
+    r = resolve(ARTIST, FULL, [ug, sg], cache)
+    assert r.needs_review is True
+    assert r.tuning is None
+    assert r.source is None
+    assert r.candidates == (ug_exact, sg_exact, ug_fuzzy1)
+    assert cache.get(ARTIST, FULL) is None
+    items = cache.review_items()
+    assert len(items) == 1
+    assert (items[0].artist, items[0].title) == (ARTIST, FULL)
+    assert items[0].candidates == (ug_exact, sg_exact, ug_fuzzy1)
+
+
+def test_no_second_round_when_first_round_has_exact(cache):
+    ug = FakeSource("ug", {(ARTIST, FULL): make_match(A_STD_5, "ug-bass", True, ARTIST, FULL)})
+    sg = FakeSource("songsterr")
+    r = resolve(ARTIST, FULL, [ug, sg], cache)
+    assert r.source == "ug-bass"
+    assert ug.calls == [(ARTIST, FULL)]
+    assert sg.calls == [(ARTIST, FULL)]
+
+
+def test_no_second_round_without_part_title(cache):
+    ug = FakeSource("ug")
+    sg = FakeSource("songsterr")
+    r = resolve("Tool", "Schism", [ug, sg], cache)
+    assert r.needs_review is True
+    assert ug.calls == [("Tool", "Schism")]
+    assert sg.calls == [("Tool", "Schism")]
+
+
+def test_no_second_round_for_version_suffix(cache):
+    ug = FakeSource("ug")
+    r = resolve("Tool", "Song - Live", [ug], cache)
+    assert r.needs_review is True
+    assert ug.calls == [("Tool", "Song - Live")]
+
+
+def test_both_rounds_fuzzy_keeps_deduplicated_candidates(cache):
+    u1 = _with_url(make_match("E A D G", "ug-bass", False, ARTIST, "Of Matter"), "https://x/u1")
+    s1 = _with_url(make_match("D G C F", "songsterr", False, ARTIST, PART), "https://x/s1")
+    u2 = _with_url(make_match("A D G C", "ug-bass", False, ARTIST, "Retrospect (Live)"), "https://x/u2")
+    s1_again = _with_url(make_match("D G C F", "songsterr", False, ARTIST, PART), "https://x/s1")
+    ug = FakeSource("ug", {(ARTIST, FULL): u1, (ARTIST, PART): u2})
+    sg = FakeSource("songsterr", {(ARTIST, FULL): s1, (ARTIST, PART): s1_again})
+    r = resolve(ARTIST, FULL, [ug, sg], cache)
+    assert r.needs_review is True
+    assert r.tuning is None
+    assert len(r.candidates) == 3
+    assert {(c.source, c.url) for c in r.candidates} == {
+        ("ug-bass", "https://x/u1"),
+        ("songsterr", "https://x/s1"),
+        ("ug-bass", "https://x/u2"),
+    }
+    assert all(c.exact is False for c in r.candidates)
+    assert cache.get(ARTIST, FULL) is None
+    items = cache.review_items()
+    assert [(i.artist, i.title) for i in items] == [(ARTIST, FULL)]
+    assert len(items[0].candidates) == 3
+    assert ug.calls == [(ARTIST, FULL), (ARTIST, PART)]
+    assert sg.calls == [(ARTIST, FULL), (ARTIST, PART)]
+
+
+def test_second_round_with_nothing_found_needs_review(cache):
+    ug = FakeSource("ug")
+    r = resolve(ARTIST, FULL, [ug], cache)
+    assert r.needs_review is True
+    assert r.candidates == ()
+    assert ug.calls == [(ARTIST, FULL), (ARTIST, PART)]

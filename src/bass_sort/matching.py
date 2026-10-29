@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from typing import Optional
 
 # Bracketed or dashed suffixes that name the same recording.
 _SAME_RECORDING = re.compile(
@@ -12,7 +13,13 @@ _SAME_RECORDING = re.compile(
     re.IGNORECASE,
 )
 _BRACKETED = re.compile(r"\s*[(\[]([^)\]]*)[)\]]")
-_DASHED = re.compile(r"\s+-\s+(.*)$")
+# The text after the last spaced dash: "Of Matter - Retrospect - 2013 Remaster".
+_DASHED = re.compile(r"\s+[-–—]\s+((?:(?!\s[-–—]\s).)*)$")
+_VERSION = re.compile(
+    r"\b(live|acoustic|demo|remix|mix|edit|version|remaster\w*|mono|stereo|instrumental"
+    r"|unplugged|cover|karaoke)\b",
+    re.IGNORECASE,
+)
 
 
 def _plain(text: str) -> str:
@@ -30,12 +37,33 @@ def normalise_title(title: str) -> str:
     "(feat. X)", "(Mono)", "(Album Version)". Live/acoustic/demo/remix suffixes are kept,
     since those are different recordings."""
 
+    return _plain(_without_same_recording(title))
+
+
+def _without_same_recording(title: str) -> str:
     def drop_if_same(m: re.Match[str]) -> str:
         return "" if _SAME_RECORDING.search(m.group(1)) else m.group(0)
 
     title = _BRACKETED.sub(drop_if_same, title)
-    title = _DASHED.sub(drop_if_same, title)
-    return _plain(title)
+    return _DASHED.sub(drop_if_same, title)
+
+
+def part_title(title: str) -> Optional[str]:
+    """The part name of a "<suite> - <part>" title, e.g. "Retrospect" for
+    "Of Matter - Retrospect", which is how tab sites tend to list it.
+
+    Takes the text after the last spaced dash (-, – or —) once same-recording suffixes
+    such as "- 2013 Remaster" or "(Remastered)" are removed. Returns None when there is
+    no such dash, or when that text names a version rather than a part (live, acoustic,
+    demo, remix, mix, edit, version, remaster, mono, stereo, instrumental, unplugged,
+    cover, karaoke)."""
+    m = _DASHED.search(_without_same_recording(title))
+    if m is None:
+        return None
+    part = m.group(1).strip()
+    if not _plain(part) or _VERSION.search(part):
+        return None
+    return part
 
 
 def normalise_artist(artist: str) -> str:
