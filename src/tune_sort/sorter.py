@@ -144,4 +144,7 @@ def track_states(music: Music, playlist: str, cache: Cache) -> list[TrackState]:
     """The tracks of `playlist`, in playlist order, each with its cache entry and review
     candidates (None if it has none). Never queries a source and changes nothing.
     Raises MusicError if the playlist cannot be read."""
-    raise NotImplementedError
+    return [
+        TrackState(t, cache.get(t.artist, t.name), cache.queued(t.artist, t.name))
+        for t in music.get_tracks(playlist)
+    ]
