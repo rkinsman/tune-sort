@@ -82,6 +82,14 @@ example `D A D G` or `D A D G B E`. Enharmonic spellings are treated as the same
 so D# G# C# F# and Eb Ab Db Gb both land in `Bass – Eb Standard`. For bass, a 6-string
 guitar tuning such as E A D G B E is read as the bass's lowest four strings (E Standard).
 
+### Helper for the Mac app
+
+`uv run tune-sort serve` runs the long-lived helper that the TuneSort Mac app drives. It
+reads one JSON request per line on stdin (`{"id": 1, "cmd": "hello", "args": {}}`), writes
+JSON replies on stdout and exits when stdin closes. Diagnostics go to stderr. It accepts
+`--cache PATH` and `--config PATH` like the other commands. The protocol is described in
+`docs/superpowers/specs/2026-10-29-mac-app-design.md`.
+
 ## Development
 
 ```bash

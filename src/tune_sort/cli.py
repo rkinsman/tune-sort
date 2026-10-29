@@ -71,7 +71,11 @@ Otherwise (pipes, tests) nothing extra is printed.
           "guitar: ug-pro, ug-tab, songsterr"
       Exits 1 with "Error: …" if the file is invalid.
 
-`sort` and `config` accept --config PATH (default: $TUNE_SORT_CONFIG, else
+  tune-sort serve [--cache PATH] [--config PATH]
+      Run the JSON-lines helper the Mac app drives (see tune_sort.serve): read requests
+      from stdin, write replies to stdout (both UTF-8), exit at end of input.
+
+`sort`, `config` and `serve` accept --config PATH (default: $TUNE_SORT_CONFIG, else
 ~/.config/tune-sort/config.toml).
 
 Every command accepts --cache PATH (default: $TUNE_SORT_CACHE, else
@@ -80,10 +84,11 @@ Every command accepts --cache PATH (default: $TUNE_SORT_CACHE, else
 
 from __future__ import annotations
 
+import io
 from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TextIO
 
 import typer
 from rich.console import Console
@@ -151,6 +156,17 @@ def make_app(music: Callable[[], Music], sources: SourcesFactory) -> typer.Typer
         typer.echo(f"Config file: {config_path}{missing}")
         for instrument, order in orders.items():
             typer.echo(f"{instrument}: {', '.join(order)}")
+
+    @app.command("serve")
+    def serve_command(cache_path: Path = CACHE_OPTION, config_path: Path = CONFIG_OPTION) -> None:
+        """Run the JSON-lines helper for the Mac app (stdin -> stdout)."""
+        import sys
+
+        # Imported here: tune_sort.serve imports from this module.
+        from tune_sort.serve import serve
+
+        stdin, stdout = _utf8(sys.stdin), _utf8(sys.stdout)
+        serve(stdin, stdout, music, sources, lambda i: Cache(cache_path, i), config_path)
 
     for instrument in INSTRUMENTS:
         app.add_typer(
@@ -231,6 +247,13 @@ def _instrument_app(
         typer.echo(f"Set {artist} – {title} to {_described(parsed)}")
 
     return app
+
+
+def _utf8(stream: TextIO) -> TextIO:
+    """`stream`, set to UTF-8 when it is a text wrapper that can be reconfigured."""
+    if isinstance(stream, io.TextIOWrapper):
+        stream.reconfigure(encoding="utf-8")
+    return stream
 
 
 TUNING_EXAMPLES = {"bass": "(e.g. Drop D or B E A D G)", "guitar": "(e.g. Drop D or D A D G B E)"}

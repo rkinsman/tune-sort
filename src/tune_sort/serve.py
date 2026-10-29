@@ -187,6 +187,14 @@ def _delete(session: _Session, args: dict[str, Any]) -> Any:
     return {}
 
 
+def _sort(session: _Session, args: dict[str, Any]) -> Any:
+    raise NotImplementedError("sort")
+
+
+def _cancel(session: _Session, args: dict[str, Any]) -> Any:
+    raise NotImplementedError("cancel")
+
+
 # Command name -> handler. Handlers raise BadRequest for bad arguments.
 HANDLERS: dict[str, Handler] = {
     "hello": _hello,
@@ -194,6 +202,8 @@ HANDLERS: dict[str, Handler] = {
     "tracks": _tracks,
     "config": _config,
     "set_order": _set_order,
+    "sort": _sort,
+    "cancel": _cancel,
     "review_list": _review_list,
     "describe": _describe,
     "set": _set,
