@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from typing import Optional
 
 from bass_sort.cache import Cache
 from bass_sort.music import Music, Track
@@ -26,6 +27,7 @@ def sort_playlist(
     sources: Sequence[Source],
     cache: Cache,
     dry_run: bool = False,
+    on_progress: Optional[Callable[[int, int, Track], None]] = None,
 ) -> Report:
     """Resolve every track in `playlist` and add each resolved track to the playlist named
     by its tuning's `playlist_name`, creating that playlist if needed.
@@ -34,6 +36,10 @@ def sort_playlist(
     playlist is reported in `already_present`, not added again. Tracks needing review are
     not added anywhere. With dry_run, nothing in Music is created or changed and
     `added` lists what would be added.
+
+    on_progress, if given, is called as on_progress(i, total, track) just before each
+    track is resolved, with i counting from 1 and total the number of tracks in the
+    playlist. It is not called for an empty playlist.
     """
     report = Report()
     tracks = music.get_tracks(playlist)
@@ -41,7 +47,9 @@ def sort_playlist(
     # Persistent IDs in each target playlist, loaded on first use and kept up to date.
     members: dict[str, set[str]] = {}
 
-    for track in tracks:
+    for i, track in enumerate(tracks, 1):
+        if on_progress is not None:
+            on_progress(i, len(tracks), track)
         resolution = resolve(track.artist, track.name, sources, cache)
         report.resolutions.append((track, resolution))
         if resolution.tuning is None:

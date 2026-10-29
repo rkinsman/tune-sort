@@ -41,6 +41,10 @@ uv run bass-sort set "Nirvana" "Come As You Are" "D Standard"
 
 `--source ug|songsterr|both` limits which sites are asked. The default is `both`.
 
+While sorting, a spinner shows which song is being looked up (`[3/22] Looking up …`). If
+any songs need review at the end, `sort` offers to review them right away (`--review` or
+`--no-review` skip the question).
+
 Tunings can be typed as names, for example `Drop D`, `eb standard` or
 `5-string B Standard`, or as notes from the lowest string up, for example `D A D G`.
 Enharmonic spellings are treated as the same tuning, so D# G# C# F# and Eb Ab Db Gb

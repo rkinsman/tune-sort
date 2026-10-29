@@ -39,6 +39,10 @@
       "Set <artist> – <title> to <tuning name> (<playlist name>)".
       Exits 1 with a message if TUNING isn't understood.
 
+While `sort` works, a spinner showing "[<i>/<n>] Looking up <artist> – <title>" is drawn
+on stderr, but only when stderr is a terminal; it is removed when the sort finishes.
+Otherwise (pipes, tests) nothing extra is printed.
+
 Every command accepts --cache PATH (default: $BASS_SORT_CACHE, else
 ~/.cache/bass-tuning-sorter/tunings.db).
 """
@@ -51,10 +55,12 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+from rich.console import Console
+from rich.text import Text
 
 from bass_sort.cache import DEFAULT_PATH, Cache, Entry, ReviewItem
 from bass_sort.matching import normalise_artist, normalise_title
-from bass_sort.music import Music, MusicError
+from bass_sort.music import Music, MusicError, Track
 from bass_sort.sorter import Report, sort_playlist
 from bass_sort.sources import Source
 from bass_sort.tuning import Tuning, TuningParseError, parse_name
@@ -164,7 +170,17 @@ def _sort_and_print(
     music: Music, playlist: str, sources: list[Source], cache: Cache, dry_run: bool
 ) -> Report:
     try:
-        report = sort_playlist(music, playlist, sources, cache, dry_run)
+        console = Console(stderr=True)
+        if console.is_terminal:
+            # Text, not markup: "[3/22]" and song titles may contain brackets.
+            with console.status(Text(f"Reading {playlist} from Music…")) as status:
+
+                def show(i: int, total: int, track: Track) -> None:
+                    status.update(Text(f"[{i}/{total}] Looking up {track.artist} – {track.name}…"))
+
+                report = sort_playlist(music, playlist, sources, cache, dry_run, show)
+        else:
+            report = sort_playlist(music, playlist, sources, cache, dry_run)
     except MusicError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1) from e

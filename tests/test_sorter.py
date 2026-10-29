@@ -150,3 +150,86 @@ def test_old_cached_guitar_tuning_sorts_to_four_string_playlist(cache):
     assert report.added == {E_STD: [A]}
     assert not any("6-String" in name for name in music.playlists)
     assert not any("6-String" in name for name in report.added)
+
+
+# ------------------------------------------------------------- on_progress callback
+
+
+def test_on_progress_called_per_track_in_order(cache):
+    music = FakeMusic({"P": [C, A, B]})
+    calls = []
+    sort_playlist(music, "P", sources(), cache, on_progress=lambda i, n, t: calls.append((i, n, t)))
+    assert calls == [(1, 3, C), (2, 3, A), (3, 3, B)]
+
+
+def test_on_progress_called_for_duplicates(cache):
+    music = FakeMusic({"P": [A, A, B]})
+    calls = []
+    sort_playlist(music, "P", sources(), cache, on_progress=lambda i, n, t: calls.append((i, n, t)))
+    assert calls == [(1, 3, A), (2, 3, A), (3, 3, B)]
+
+
+def test_on_progress_not_called_for_empty_playlist(cache):
+    music = FakeMusic({"P": []})
+    calls = []
+    report = sort_playlist(
+        music, "P", sources(), cache, on_progress=lambda i, n, t: calls.append((i, n, t))
+    )
+    assert calls == []
+    assert report.resolutions == []
+
+
+def test_on_progress_called_before_lookup(cache):
+    music = FakeMusic({"P": [A, B, C]})
+    srcs = sources()
+    seen = []
+
+    def cb(i, n, t):
+        seen.append((i, len(srcs[0].calls)))
+
+    sort_playlist(music, "P", srcs, cache, on_progress=cb)
+    assert seen == [(1, 0), (2, 1), (3, 2)]
+    assert srcs[0].calls == [("Tool", "Schism"), ("Opeth", "Deliverance"), ("Rush", "YYZ")]
+
+
+def test_on_progress_called_for_cached_tracks(cache):
+    cache.put("Tool", "Schism", Entry(Tuning((2, 9, 2, 7)), "manual", True))
+    music = FakeMusic({"P": [A, B]})
+    srcs = sources()
+    seen = []
+    sort_playlist(
+        music, "P", srcs, cache, on_progress=lambda i, n, t: seen.append((i, n, t.persistent_id))
+    )
+    assert seen == [(1, 2, "A"), (2, 2, "B")]
+    assert srcs[0].calls == [("Opeth", "Deliverance")]
+
+
+def test_on_progress_called_with_dry_run(cache):
+    music = FakeMusic({"P": [A, B]})
+    calls = []
+    sort_playlist(
+        music,
+        "P",
+        sources(),
+        cache,
+        dry_run=True,
+        on_progress=lambda i, n, t: calls.append((i, n, t)),
+    )
+    assert calls == [(1, 2, A), (2, 2, B)]
+    assert music.add_calls == []
+
+
+def test_on_progress_does_not_change_report(cache, tmp_path):
+    from bass_sort.cache import Cache
+
+    plain_cache = Cache(tmp_path / "plain.db")
+    try:
+        r1 = sort_playlist(FakeMusic({"P": [A, B, C]}), "P", sources(), plain_cache)
+    finally:
+        plain_cache.close()
+    r2 = sort_playlist(
+        FakeMusic({"P": [A, B, C]}), "P", sources(), cache, on_progress=lambda i, n, t: None
+    )
+    assert r1.added == r2.added
+    assert r1.created_playlists == r2.created_playlists
+    assert [t for t, _ in r1.resolutions] == [t for t, _ in r2.resolutions]

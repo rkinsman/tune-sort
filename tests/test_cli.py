@@ -63,6 +63,23 @@ def test_sort(cache_path):
     assert music.playlists[DROP_D] == [A]
 
 
+def test_sort_prints_no_progress_when_not_a_terminal(cache_path):
+    music = FakeMusic({"Road": [A, B]})
+    result, _ = invoke(music, ["sort", "Road", "--no-review"], cache_path)
+    assert result.exit_code == 0, result.output
+    assert "Looking up" not in result.output
+    assert "[1/" not in result.output
+    assert "[2/" not in result.output
+    assert "Tool %s Schism %s %s (ug-bass)" % (DASH, ARROW, DROP_D) in result.output
+
+
+def test_sort_dry_run_prints_no_progress_when_not_a_terminal(cache_path):
+    music = FakeMusic({"Road": [A]})
+    result, _ = invoke(music, ["sort", "Road", "--dry-run"], cache_path)
+    assert "Looking up" not in result.output
+    assert "[1/" not in result.output
+
+
 def test_sort_rerun_reports_already_present(cache_path):
     music = FakeMusic({"Road": [A]})
     invoke(music, ["sort", "Road"], cache_path)
