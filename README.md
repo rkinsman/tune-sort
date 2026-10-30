@@ -102,6 +102,14 @@ helper from this repo, at `<repo>/.venv/bin/tune-sort`, so run `uv sync` first. 
 path defaults to `~/code/tune-sort`; if the helper isn't there the app shows a setup
 screen where you can change it (it's also in Settings).
 
+The app icon is drawn by `mac/Resources/AppIcon.swift`, which writes
+`mac/Resources/AppIcon.icns`; `AppIcon.svg` next to it previews the artwork. After changing
+the drawing, regenerate the icon and commit the new `.icns`:
+
+```bash
+swift mac/Resources/AppIcon.swift mac/Resources
+```
+
 The first time the app reads or changes Music, macOS asks whether TuneSort may control
 Music. Allow it. If you said no, the app shows a button that opens System Settings →
 Privacy & Security → Automation, where you can turn it back on.
