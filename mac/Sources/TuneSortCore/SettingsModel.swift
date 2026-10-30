@@ -48,8 +48,11 @@ public final class SettingsModel {
         }
     }
 
+    /// A `setOrder` call is in flight; further changes are ignored until it returns.
+    private var updating = false
+
     public func move(_ i: Instrument, from: IndexSet, to: Int) async {
-        guard var list = orders[i] else { return }
+        guard !updating, var list = orders[i] else { return }
         let moving = from.filter { list.indices.contains($0) }.sorted().map { list[$0] }
         let dest = to - from.filter { $0 < to }.count
         for idx in from.sorted(by: >) where list.indices.contains(idx) { list.remove(at: idx) }
@@ -58,7 +61,7 @@ public final class SettingsModel {
     }
 
     public func toggle(_ i: Instrument, _ name: String) async {
-        guard var list = orders[i], let idx = list.firstIndex(where: { $0.name == name }) else { return }
+        guard !updating, var list = orders[i], let idx = list.firstIndex(where: { $0.name == name }) else { return }
         if list[idx].enabled && list.filter(\.enabled).count <= 1 { return }
         list[idx].enabled.toggle()
         await push(i, list)
@@ -75,6 +78,9 @@ public final class SettingsModel {
     /// Sends the order; on success rebuilds `orders[i]` from the returned order. `keeping` is
     /// the current list whose disabled entries stay where they are.
     private func apply(_ i: Instrument, _ names: [String]?, keeping: [SourceToggle]? = nil) async {
+        guard !updating else { return }
+        updating = true
+        defer { updating = false }
         do {
             let returned = try await api.setOrder(i, names)
             var list: [SourceToggle]
@@ -99,10 +105,10 @@ public final class SettingsModel {
 
     private func fail(_ e: Error) {
         if e is CancellationError { return }
-        if case let ClientError.helper(kind, message) = e, kind == "config" {
+        if case let ClientError.helper(_, message) = e {
             error = message
         } else {
-            error = String(describing: e)
+            error = e.localizedDescription
         }
     }
 }

@@ -37,10 +37,12 @@ public final class SidePanelModel {
         let result: Result<TuningInfo, ClientError>
         do {
             result = .success(try await api.describe(app.instrument, text))
-        } catch let e as ClientError {
-            result = .failure(e)
+        } catch let ClientError.helper(kind, message) where kind == "bad_tuning" {
+            result = .failure(.helper(kind: kind, message: message))
         } catch {
-            if !(error is CancellationError) { app.show(error) }
+            guard gen == typedGeneration else { return }
+            typedResult = nil
+            app.show(error)
             return
         }
         guard gen == typedGeneration else { return }
@@ -52,11 +54,12 @@ public final class SidePanelModel {
     public func save() async {
         let text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        typedGeneration += 1
         await store(text)
     }
 
     public func clear() async {
-        guard let row else { return }
+        guard let row, app.runState == .idle else { return }
         do {
             try await api.delete(app.instrument, artist: row.artist, title: row.title)
         } catch {
@@ -67,7 +70,7 @@ public final class SidePanelModel {
     }
 
     private func store(_ tuning: String) async {
-        guard let row else { return }
+        guard let row, app.runState == .idle else { return }
         do {
             _ = try await api.set(app.instrument, artist: row.artist, title: row.title, tuning: tuning)
         } catch let ClientError.helper(kind, message) where kind == "bad_tuning" {
