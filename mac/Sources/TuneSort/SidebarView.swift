@@ -24,6 +24,7 @@ struct SidebarView: View {
             Section("Playlists") {
                 ForEach(app.playlists, id: \.self) { name in
                     Label(name, systemImage: "music.note.list")
+                        .badge(app.playlistReviewCounts[name] ?? 0)
                         .tag(SidebarItem.playlist(name))
                 }
             }

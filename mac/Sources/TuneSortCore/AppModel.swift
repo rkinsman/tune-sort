@@ -58,6 +58,13 @@ public final class AppModel {
 
     public var instrument: Instrument = .bass
     public var reviewCount: Int = 0
+    /// Songs in the review queue per playlist name; playlists without any are absent.
+    /// Filled in the background by `refreshReviewCounts()`.
+    public private(set) var playlistReviewCounts: [String: Int] = [:]
+    /// The background refresh of `playlistReviewCounts` started last, so callers (and
+    /// tests) can await it.
+    public private(set) var reviewCountsTask: Task<Void, Never>?
+    private var reviewCountsGeneration = 0
     public var playlists: [String] = []
     public var tuningPlaylists: [String] = []
     public var selection: SidebarItem?
@@ -126,6 +133,7 @@ public final class AppModel {
             tuningPlaylists = all.filter { isTuningPlaylist($0, for: i) }
             playlists = all.filter { !isTuningPlaylist($0, for: i) }
             reviewCount = review.count
+            refreshReviewCounts()
         } catch {
             show(error)
         }
@@ -162,6 +170,7 @@ public final class AppModel {
         playlists = []
         tuningPlaylists = []
         reviewCount = 0
+        playlistReviewCounts = [:]
         lastSummary = nil
         lastPreview = nil
         await load()
@@ -171,6 +180,7 @@ public final class AppModel {
     /// preview's figures and reloads the review count and the selection's rows.
     public func refreshRow(artist: String, title: String) async {
         lastPreview = nil
+        refreshReviewCounts()
         let i = instrument
         guard let item = selection else { return }
         do {
@@ -305,11 +315,25 @@ public final class AppModel {
         }
         await refreshAfterRun(i)
         runState = .idle
+        refreshReviewCounts()
     }
 
     /// After a run: the review queue's candidates for `.review` rows, the review count, and
     /// the playlists (the run may have created tuning playlists). Keeps the banner; a
     /// failed call changes nothing.
+    /// Starts a background refresh of `playlistReviewCounts`, replacing any earlier one.
+    /// Called after load(), after every run and after refreshRow(); errors are ignored.
+    public func refreshReviewCounts() {
+        reviewCountsGeneration += 1
+        let generation = reviewCountsGeneration
+        let i = instrument
+        reviewCountsTask = Task { [api] in
+            guard let counts = try? await api.reviewCounts(i) else { return }
+            guard generation == self.reviewCountsGeneration, i == self.instrument else { return }
+            self.playlistReviewCounts = counts
+        }
+    }
+
     private func refreshAfterRun(_ i: Instrument) async {
         if let review = try? await api.reviewList(i), i == instrument {
             reviewCount = review.count
