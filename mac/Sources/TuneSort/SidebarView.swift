@@ -18,13 +18,13 @@ struct SidebarView: View {
         List(selection: selection) {
             Label("Needs review", systemImage: "questionmark.circle")
                 .badge(app.reviewCount)
-                .tag(SidebarItem.needsReview as SidebarItem?)
+                .tag(SidebarItem.needsReview)
             Label("All songs", systemImage: "music.note.list")
-                .tag(SidebarItem.allSongs as SidebarItem?)
+                .tag(SidebarItem.allSongs)
             Section("Playlists") {
                 ForEach(app.playlists, id: \.self) { name in
                     Label(name, systemImage: "music.note.list")
-                        .tag(SidebarItem.playlist(name) as SidebarItem?)
+                        .tag(SidebarItem.playlist(name))
                 }
             }
             if !app.tuningPlaylists.isEmpty {
@@ -32,7 +32,7 @@ struct SidebarView: View {
                     ForEach(app.tuningPlaylists, id: \.self) { name in
                         Label(name, systemImage: "tuningfork")
                             .foregroundStyle(.secondary)
-                            .tag(SidebarItem.tuningPlaylist(name) as SidebarItem?)
+                            .tag(SidebarItem.tuningPlaylist(name))
                     }
                 }
             }
