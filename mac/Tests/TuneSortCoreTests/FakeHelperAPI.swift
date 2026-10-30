@@ -47,6 +47,8 @@ final class FakeHelperAPI: HelperAPI, @unchecked Sendable {
         /// When set, setOrder returns/throws this instead of echoing its argument.
         var setOrderReply: Result<[String], Error>?
         var setOrderArgs: [(Instrument, [String]?)] = []
+        /// setOrder blocks (after being logged) until this gate opens.
+        var setOrderGate: Gate?
     }
 
     private let lock = NSLock()
@@ -86,6 +88,7 @@ final class FakeHelperAPI: HelperAPI, @unchecked Sendable {
     func setOrder(_ i: Instrument, _ order: [String]?) async throws -> [String] {
         log("setOrder:\(i.rawValue)")
         lock.withLock { state.setOrderArgs.append((i, order)) }
+        await read({ $0.setOrderGate })?.wait()
         if let reply = read({ $0.setOrderReply }) { return try reply.get() }
         return order ?? []
     }
