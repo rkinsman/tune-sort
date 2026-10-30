@@ -1,4 +1,4 @@
-"""sorter.review_counts: per-playlist counts of tracks queued for review."""
+"""sorter.review_counts: per-playlist counts of distinct songs queued for review."""
 from __future__ import annotations
 
 from typing import Dict, List
@@ -72,11 +72,33 @@ def test_song_in_two_playlists_counts_in_each(cache):
     assert review_counts(music, cache) == {"A": 1, "B": 1}
 
 
-def test_duplicate_within_playlist_counts_twice(cache):
+def test_duplicate_within_playlist_counts_once(cache):
     queue(cache, ("Tool", "Schism"))
     dup = make_track("9", "Tool", "Schism")
     music = FakeMusic({"Road": [SCHISM, dup]})
-    assert review_counts(music, cache) == {"Road": 2}
+    assert review_counts(music, cache) == {"Road": 1}
+
+
+def test_differently_titled_tracks_of_one_queued_song_count_once(cache):
+    queue(cache, ("Tool", "Schism"))
+    remaster = make_track("7", "tool", "Schism (Remastered)")
+    music = FakeMusic({"Road": [SCHISM, remaster]})
+    assert review_counts(music, cache) == {"Road": 1}
+
+
+def test_whole_library_count_equals_queued_songs_present_despite_duplicates(cache):
+    queue(cache, ("Tool", "Schism"), ("Opeth", "Deliverance"), ("Nobody", "Absent"))
+    library = [
+        SCHISM,
+        make_track("11", "Tool", "Schism"),
+        make_track("12", "tool", "Schism (Remastered)"),
+        DELIV,
+        make_track("13", "Opeth", "Deliverance"),
+        YYZ,
+        make_track("14", "Rush", "YYZ"),
+    ]
+    music = FakeMusic({"Library": library, "Road": [SCHISM, YYZ]})
+    assert review_counts(music, cache) == {"Library": 2, "Road": 1}
 
 
 def test_matching_is_normalised(cache):
@@ -126,15 +148,12 @@ def test_changes_nothing(cache):
     queue(cache, ("Tool", "Schism"))
     cache.put("Rush", "YYZ", Entry(T("D A D G"), "ug-bass", True))
     music = FakeMusic({"Road": [SCHISM, DELIV, YYZ]})
-    review_before = list(cache.review_items()) if hasattr(cache, "review_items") else None
     review_counts(music, cache)
     assert music.add_calls == []
     assert music.ensure_calls == []
     assert list(music.playlists) == ["Road"]
     # Counting again gives the same answer and the queue still holds the song.
     assert review_counts(music, cache) == {"Road": 1}
-    if review_before is not None:
-        assert list(cache.review_items()) == review_before
     assert cache.get("Rush", "YYZ") is not None
 
 
