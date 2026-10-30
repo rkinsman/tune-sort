@@ -54,6 +54,14 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 mac="$root/mac"
 app="${out:-$mac/TuneSort.app}"
 
+# Check the inputs before building, and before the old bundle is deleted below.
+for resource in Info.plist AppIcon.icns; do
+    if [ ! -f "$mac/Resources/$resource" ]; then
+        echo "error: missing $mac/Resources/$resource" >&2
+        exit 1
+    fi
+done
+
 cd "$mac"
 swift build -c release
 bin_dir="$(swift build -c release --show-bin-path)"
