@@ -327,7 +327,7 @@ public final class AppModel {
         return parts.joined(separator: " · ")
     }
 
-    private func show(_ error: Error) {
+    func show(_ error: Error) {
         if error is CancellationError { return }
         if let e = error as? ClientError {
             switch e {
