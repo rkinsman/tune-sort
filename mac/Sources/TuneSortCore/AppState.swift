@@ -194,5 +194,24 @@ public struct SourceChoice: Equatable, Hashable, Sendable {
 /// "Saved order" (order nil) first; then, for 2 or 3 sources, every ordering (label the
 /// names joined by " → "); then, for 2 or more sources, each source alone ("<name> only").
 public func sourceChoices(enabled: [String]) -> [SourceChoice] {
-    []  // stub
+    var result = [SourceChoice(order: nil, label: "Saved order")]
+    if (2...3).contains(enabled.count) {
+        result += permutations(enabled).map { SourceChoice(order: $0, label: $0.joined(separator: " \u{2192} ")) }
+    }
+    if enabled.count >= 2 {
+        result += enabled.map { SourceChoice(order: [$0], label: "\($0) only") }
+    }
+    return result
+}
+
+/// Every ordering of `items`: each item in turn first, then the orderings of the rest.
+private func permutations(_ items: [String]) -> [[String]] {
+    guard items.count > 1 else { return [items] }
+    var out: [[String]] = []
+    for (i, first) in items.enumerated() {
+        var rest = items
+        rest.remove(at: i)
+        for p in permutations(rest) { out.append([first] + p) }
+    }
+    return out
 }

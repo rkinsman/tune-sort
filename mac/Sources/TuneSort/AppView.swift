@@ -13,11 +13,6 @@ struct AppView: View {
 
     private var isRunning: Bool { app.runState != .idle }
 
-    private var canRun: Bool {
-        guard case .playlist? = app.selection else { return false }
-        return !isRunning && app.banner?.kind != .config
-    }
-
     var body: some View {
         NavigationSplitView {
             SidebarView(app: app)
@@ -80,13 +75,13 @@ struct AppView: View {
                 Button("Stop") { Task { await app.stop() } }
             } else {
                 Button("Preview") { Task { await app.preview() } }
-                    .disabled(!canRun)
+                    .disabled(!app.canRun)
                     .help("Dry run: show where each song would go, without changing Music")
                 Button("Sort") {
                     confirmation = app.sortConfirmation()
                     confirmingSort = true
                 }
-                .disabled(!canRun)
+                .disabled(!app.canRun)
             }
         }
     }
@@ -107,33 +102,19 @@ struct SourcesMenu: View {
     let app: AppModel
     let settings: SettingsModel
 
-    private var names: [String] {
-        (settings.orders[app.instrument] ?? []).map(\.name)
-    }
-
-    private var choices: [[String]] {
-        let all = names
-        var result: [[String]] = []
-        if all.count > 1 && all.count <= 3 { result += permutations(all) }
-        if all.count > 1 { result += all.map { [$0] } }
-        return result
+    private var choices: [SourceChoice] {
+        sourceChoices(enabled: (settings.orders[app.instrument] ?? []).filter(\.enabled).map(\.name))
     }
 
     var body: some View {
         Menu {
-            Button {
-                app.sourcesOverride = nil
-            } label: {
-                checked(app.sourcesOverride == nil, "Saved order")
-            }
-            if !choices.isEmpty { Divider() }
-            ForEach(choices, id: \.self) { order in
+            ForEach(choices, id: \.self) { choice in
                 Button {
-                    app.sourcesOverride = order
+                    app.sourcesOverride = choice.order
                 } label: {
-                    checked(app.sourcesOverride == order,
-                            order.count == 1 ? "\(order[0]) only" : order.joined(separator: " → "))
+                    checked(app.sourcesOverride == choice.order, choice.label)
                 }
+                if choice.order == nil && choices.count > 1 { Divider() }
             }
         } label: {
             Label(label, systemImage: "list.number")
@@ -150,16 +131,5 @@ struct SourcesMenu: View {
     @ViewBuilder
     private func checked(_ on: Bool, _ text: String) -> some View {
         if on { Label(text, systemImage: "checkmark") } else { Text(text) }
-    }
-
-    private func permutations(_ items: [String]) -> [[String]] {
-        guard items.count > 1 else { return [items] }
-        var out: [[String]] = []
-        for (i, first) in items.enumerated() {
-            var rest = items
-            rest.remove(at: i)
-            for p in permutations(rest) { out.append([first] + p) }
-        }
-        return out
     }
 }

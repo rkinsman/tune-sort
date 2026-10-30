@@ -103,7 +103,8 @@ public final class AppModel {
     /// Preview and Sort can start: a (non-tuning) playlist is selected, its rows have
     /// loaded, nothing is running, and no `config` banner is showing.
     public var canRun: Bool {
-        false  // stub
+        guard case .playlist? = selection else { return false }
+        return !loadingRows && runState == .idle && banner?.kind != .config
     }
 
     private var isRunning: Bool { runState != .idle }
@@ -166,7 +167,10 @@ public final class AppModel {
         await load()
     }
 
+    /// Called after the side panel changed the cache (`set` or `delete`): drops the last
+    /// preview's figures and reloads the review count and the selection's rows.
     public func refreshRow(artist: String, title: String) async {
+        lastPreview = nil
         let i = instrument
         guard let item = selection else { return }
         do {
@@ -299,7 +303,29 @@ public final class AppModel {
             restore()
             show(error)
         }
+        await refreshAfterRun(i)
         runState = .idle
+    }
+
+    /// After a run: the review queue's candidates for `.review` rows, the review count, and
+    /// the playlists (the run may have created tuning playlists). Keeps the banner; a
+    /// failed call changes nothing.
+    private func refreshAfterRun(_ i: Instrument) async {
+        if let review = try? await api.reviewList(i), i == instrument {
+            reviewCount = review.count
+            var candidates: [String: [MatchInfo]] = [:]
+            for item in review { candidates["\(item.artist)\u{1F}\(item.title)"] = item.candidates }
+            for idx in allRows.indices {
+                guard case .review = allRows[idx].status,
+                      let found = candidates["\(allRows[idx].artist)\u{1F}\(allRows[idx].title)"]
+                else { continue }
+                allRows[idx].status = .review(found)
+            }
+        }
+        if let all = try? await api.playlists(), i == instrument {
+            tuningPlaylists = all.filter { isTuningPlaylist($0, for: i) }
+            playlists = all.filter { !isTuningPlaylist($0, for: i) }
+        }
     }
 
     private func index(_ artist: String, _ title: String) -> Int? {
