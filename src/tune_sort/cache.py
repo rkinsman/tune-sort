@@ -212,6 +212,13 @@ class Cache:
             return None
         return tuple(_match_from_json(d, self.instrument) for d in json.loads(row[0]))
 
+    def is_queued(self, artist: str, title: str) -> bool:
+        """Whether the song is queued for review, without reading its candidates."""
+        row = self._db.execute(
+            "SELECT 1 FROM review WHERE song_key = ?", (self._key(artist, title),)
+        ).fetchone()
+        return row is not None
+
     def review_items(self, songs: Optional[Iterable[tuple[str, str]]] = None) -> list[ReviewItem]:
         """Queued songs in the order they were first queued. With `songs`, (artist, title)
         pairs, only the queued songs among them (matched as cache keys are)."""

@@ -10,6 +10,7 @@ from tune_sort.cache import Cache, Entry
 from tune_sort.music import Music, MusicError, Track
 from tune_sort.resolver import Resolution, resolve
 from tune_sort.sources import Match, Source
+from tune_sort.tuning import is_tuning_playlist
 
 Status = Literal["added", "already_present", "review", "lookup_failed", "add_error"]
 OnDone = Callable[[Track, Resolution, Status, Optional[str], Optional[str]], None]
@@ -148,3 +149,18 @@ def track_states(music: Music, playlist: str, cache: Cache) -> list[TrackState]:
         TrackState(t, cache.get(t.artist, t.name), cache.queued(t.artist, t.name))
         for t in music.get_tracks(playlist)
     ]
+
+
+def review_counts(music: Music, cache: Cache) -> dict[str, int]:
+    """For each of the user's playlists except the cache instrument's tuning playlists, how
+    many of its tracks are queued for review in `cache`. Playlists with none are left out.
+    A song in several playlists counts in each. Reads Music once and changes nothing.
+    Raises MusicError if Music cannot be read."""
+    counts: dict[str, int] = {}
+    for name, tracks in music.all_playlist_tracks().items():
+        if is_tuning_playlist(name, cache.instrument):
+            continue
+        queued = sum(1 for t in tracks if cache.is_queued(t.artist, t.name))
+        if queued:
+            counts[name] = queued
+    return counts
