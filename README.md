@@ -84,6 +84,8 @@ guitar tuning such as E A D G B E is read as the bass's lowest four strings (E S
 
 ## Mac app
 
+![TuneSort showing a playlist's songs with their tunings](docs/screenshot.png)
+
 TuneSort.app is a window onto the same commands: a sidebar of your playlists (plus Needs
 review and All songs), a song table with each song's tuning, and a panel for the selected
 song where you can pick a review match, type a tuning, change it or clear it. **Preview**
@@ -101,14 +103,6 @@ The app lands in `mac/TuneSort.app`; drag it to `/Applications` if you like. It 
 helper from this repo, at `<repo>/.venv/bin/tune-sort`, so run `uv sync` first. The repo
 path defaults to `~/code/tune-sort`; if the helper isn't there the app shows a setup
 screen where you can change it (it's also in Settings).
-
-The app icon is drawn by `mac/Resources/AppIcon.swift`, which writes
-`mac/Resources/AppIcon.icns`; `AppIcon.svg` next to it previews the artwork. After changing
-the drawing, regenerate the icon and commit the new `.icns`:
-
-```bash
-swift mac/Resources/AppIcon.swift mac/Resources
-```
 
 The first time the app reads or changes Music, macOS asks whether TuneSort may control
 Music. Allow it. If you said no, the app shows a button that opens System Settings →
