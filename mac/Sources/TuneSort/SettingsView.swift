@@ -89,6 +89,7 @@ struct GeneralSettings: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Button("Restart Helper") { Task { await state.restart() } }
+                    .disabled(state.isStarting)
             }
         }
         .formStyle(.grouped)

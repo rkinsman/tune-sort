@@ -90,6 +90,12 @@ final class AppState {
         repoPath = Self.savedRepoPath()
     }
 
+    /// A helper is being started; restart controls are disabled meanwhile.
+    var isStarting: Bool {
+        if case .starting = phase { return true }
+        return false
+    }
+
     var session: Session? {
         if case .ready(let s) = phase { return s }
         return nil
@@ -121,6 +127,7 @@ final class AppState {
 
     /// Closes the current helper and starts a new one, keeping the instrument.
     func restart() async {
+        guard !isStarting else { return }
         let instrument = session?.app.instrument
         shutdown()
         repoPath = Self.savedRepoPath()
@@ -154,6 +161,8 @@ final class AppState {
             try await client.start()
         } catch ClientError.protocolMismatch(let helperVersion, let expected) {
             t.close()
+            // A restart while hello was pending owns `transport` and `phase` now.
+            guard transport === t else { return }
             transport = nil
             phase = .mismatch(
                 "Helper speaks protocol \(helperVersion), the app expects \(expected). Pull and rebuild.")
@@ -162,11 +171,15 @@ final class AppState {
             var tail = t.stderrTail
             if case ClientError.helperExited(let errTail) = error, !errTail.isEmpty { tail = errTail }
             t.close()
+            guard transport === t else { return }  // restarted meanwhile
             transport = nil
             phase = .failed("The helper at \(helper.path) didn't start.", stderrTail: tail)
             return
         }
-        guard transport === t else { return }  // restarted meanwhile
+        guard transport === t else {  // restarted meanwhile
+            t.close()
+            return
+        }
         let session = Session(transport: t, client: client)
         phase = .ready(session)
         if let instrument, instrument != session.app.instrument {

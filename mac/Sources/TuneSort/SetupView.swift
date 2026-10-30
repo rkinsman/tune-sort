@@ -47,6 +47,7 @@ struct SetupView: View {
             Text("Run `uv sync` in the repo to install it, then try again.")
             RepoPathField(state: state)
             Button("Try Again") { Task { await state.restart() } }
+                .disabled(state.isStarting)
                 .keyboardShortcut(.defaultAction)
         }
         .padding(32)
@@ -76,6 +77,7 @@ struct StartFailedView: View {
             }
             RepoPathField(state: state)
             Button("Try Again") { Task { await state.restart() } }
+                .disabled(state.isStarting)
                 .keyboardShortcut(.defaultAction)
         }
         .padding(32)

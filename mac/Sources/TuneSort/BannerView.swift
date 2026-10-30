@@ -11,10 +11,10 @@ struct BannerView: View {
     let restart: () -> Void
     let dismiss: () -> Void
 
-    /// osascript's "not allowed to send Apple events" (-1743): Automation was denied.
+    /// osascript error -1743 ("Not authorized to send Apple events"): Automation was denied.
     private var isPermissionDenied: Bool {
         let m = banner.message.lowercased()
-        return m.contains("-1743") || m.contains("not allowed") || m.contains("not authorized")
+        return m.contains("-1743") || m.contains("not authorized")
     }
 
     var body: some View {
