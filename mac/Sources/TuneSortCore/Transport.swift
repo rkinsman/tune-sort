@@ -25,6 +25,10 @@ public protocol Transport: Sendable {
 /// kept (last 50 lines) for the Settings log.
 public final class ProcessTransport: Transport, @unchecked Sendable {
     private static let tailLimit = 50
+    /// How long `lines` waits for stderr's EOF once the helper has exited and stdout has
+    /// ended. Normally EOF comes within milliseconds; this only bounds the case where a
+    /// grandchild process inherited stderr and keeps it open.
+    private static let stderrGrace: DispatchTimeInterval = .seconds(2)
 
     private let process = Process()
     private let stdin = Pipe()
@@ -33,11 +37,15 @@ public final class ProcessTransport: Transport, @unchecked Sendable {
     private let continuation: AsyncThrowingStream<Data, Error>.Continuation
     public let lines: AsyncThrowingStream<Data, Error>
 
+    /// Serializes writes to stdin. Separate from `lock`, so a blocking write (full pipe)
+    /// never stalls the read handlers.
+    private let writeLock = NSLock()
     // Guarded by `lock`.
     private let lock = NSLock()
     private var tail: [String] = []
     private var stdinClosed = false
     private var stdoutDone = false
+    private var stderrDone = false
     private var exited = false
     private var finished = false
     private var outSplitter = LineSplitter()
@@ -77,6 +85,9 @@ public final class ProcessTransport: Transport, @unchecked Sendable {
     }
 
     deinit {
+        stdout.fileHandleForReading.readabilityHandler = nil
+        stderr.fileHandleForReading.readabilityHandler = nil
+        process.terminationHandler = nil
         close()
     }
 
@@ -86,44 +97,46 @@ public final class ProcessTransport: Transport, @unchecked Sendable {
     }
 
     public func write(_ line: Data) async throws {
-        try lock.withLock {
-            guard !stdinClosed, !exited else {
-                throw ClientError.helperExited(stderrTail: tail)
-            }
-            var bytes = line
-            bytes.append(UInt8(ascii: "\n"))
+        var bytes = line
+        bytes.append(UInt8(ascii: "\n"))
+        try writeLock.withLock {
+            // `stdinClosed` only changes under `writeLock` too, so stdin can't be closed
+            // mid-write.
+            let gone = lock.withLock { stdinClosed || exited }
+            guard !gone else { throw ClientError.helperExited(stderrTail: stderrTail) }
             do {
                 try stdin.fileHandleForWriting.write(contentsOf: bytes)
             } catch {
-                throw ClientError.helperExited(stderrTail: tail)
+                throw ClientError.helperExited(stderrTail: stderrTail)
             }
         }
     }
 
     /// Closes the helper's stdin, which cancels a running sort; the helper then exits.
+    /// Waits for a write in progress to finish.
     public func close() {
-        lock.withLock {
-            guard !stdinClosed else { return }
-            stdinClosed = true
-            try? stdin.fileHandleForWriting.close()
+        writeLock.withLock {
+            let alreadyClosed = lock.withLock {
+                defer { stdinClosed = true }
+                return stdinClosed
+            }
+            if !alreadyClosed { try? stdin.fileHandleForWriting.close() }
         }
     }
 
     // MARK: - Pipe handlers (Foundation's background queues)
 
     private func readStdout(_ data: Data, from handle: FileHandle) {
-        var out: [Data] = []
-        lock.withLock {
-            if data.isEmpty {
-                handle.readabilityHandler = nil
-                if let rest = outSplitter.flush() { out.append(rest) }
-                stdoutDone = true
-            } else {
-                out = outSplitter.feed(data)
-            }
+        if data.isEmpty {
+            handle.readabilityHandler = nil
+            // Yield the leftover partial line before marking stdout done, so no finish
+            // can come between.
+            if let rest = lock.withLock({ outSplitter.flush() }) { continuation.yield(rest) }
+            lock.withLock { stdoutDone = true }
+            finishIfDone()
+        } else {
+            for line in lock.withLock({ outSplitter.feed(data) }) { continuation.yield(line) }
         }
-        for line in out { continuation.yield(line) }
-        finishIfDone()
     }
 
     private func readStderr(_ data: Data, from handle: FileHandle) {
@@ -139,7 +152,9 @@ public final class ProcessTransport: Transport, @unchecked Sendable {
             if tail.count > Self.tailLimit {
                 tail.removeFirst(tail.count - Self.tailLimit)
             }
+            if data.isEmpty { stderrDone = true }
         }
+        if data.isEmpty { finishIfDone() }
     }
 
     private func markExited() {
@@ -147,15 +162,26 @@ public final class ProcessTransport: Transport, @unchecked Sendable {
         finishIfDone()
     }
 
-    /// Ends `lines` once the helper has exited and all its stdout has been read.
-    private func finishIfDone() {
-        let tailNow: [String]? = lock.withLock {
-            guard exited, stdoutDone, !finished else { return nil }
+    /// Ends `lines` once the helper has exited and all of its stdout and stderr has been
+    /// read, so the error carries the complete stderr tail. If stderr stays open (a
+    /// grandchild holds it), finishes anyway after `stderrGrace`.
+    private func finishIfDone(force: Bool = false) {
+        enum Step { case none, finish([String]), wait }
+        let step: Step = lock.withLock {
+            guard exited, stdoutDone, !finished else { return .none }
+            guard stderrDone || force else { return .wait }
             finished = true
-            return tail
+            return .finish(tail)
         }
-        if let tailNow {
+        switch step {
+        case .none:
+            break
+        case let .finish(tailNow):
             continuation.finish(throwing: ClientError.helperExited(stderrTail: tailNow))
+        case .wait:
+            DispatchQueue.global().asyncAfter(deadline: .now() + Self.stderrGrace) { [weak self] in
+                self?.finishIfDone(force: true)
+            }
         }
     }
 }
