@@ -1,22 +1,47 @@
 #!/usr/bin/env bash
-# Build the TuneSort Mac app: compiles mac/ in release mode, assembles
-# mac/TuneSort.app from the binary and mac/Resources/Info.plist, and ad-hoc signs it.
+# Build the TuneSort Mac app: compiles mac/ in release mode, assembles an app bundle
+# (mac/TuneSort.app unless --out says otherwise) from the binary and
+# mac/Resources/Info.plist, and ad-hoc signs it.
 set -euo pipefail
 
 usage() {
     cat <<USAGE
-Usage: scripts/build-mac-app [-h|--help]
+Usage: scripts/build-mac-app [-h|--help] [--out PATH]
 
-Builds mac/TuneSort.app (release build, ad-hoc signed). Safe to re-run.
+Builds the TuneSort app bundle (release build, ad-hoc signed). Safe to re-run:
+an existing bundle at the output path is replaced.
+
+  --out PATH   where to write the bundle; must end in .app
+               (default: mac/TuneSort.app in the repo)
+
 Requires: swift, codesign (Xcode command line tools).
 USAGE
 }
 
-case "${1:-}" in
-    -h|--help) usage; exit 0 ;;
-    "") ;;
-    *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
-esac
+out=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -h|--help) usage; exit 0 ;;
+        --out)
+            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                echo "error: --out needs a path" >&2; usage >&2; exit 2
+            fi
+            out="$2"; shift 2 ;;
+        *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+# The bundle is deleted and rebuilt, so only ever touch a path that is an .app.
+if [ -n "$out" ]; then
+    case "$out" in
+        *.app) ;;
+        *) echo "error: --out must end in .app: $out" >&2; exit 2 ;;
+    esac
+    case "$out" in
+        /*) ;;
+        *) out="$PWD/$out" ;;
+    esac
+fi
 
 for cmd in swift codesign; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -27,7 +52,7 @@ done
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 mac="$root/mac"
-app="$mac/TuneSort.app"
+app="${out:-$mac/TuneSort.app}"
 
 cd "$mac"
 swift build -c release
