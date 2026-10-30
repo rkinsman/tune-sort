@@ -19,7 +19,7 @@ struct SettingsView: View {
             .tabItem { Label("Sources", systemImage: "list.number") }
             GeneralSettings(state: state)
                 .tabItem { Label("Helper", systemImage: "gearshape") }
-            HelperLog(transport: state.session?.transport)
+            HelperLog(session: state.session)
                 .tabItem { Label("Log", systemImage: "text.alignleft") }
         }
         .frame(width: 520, height: 460)
@@ -106,11 +106,11 @@ struct RepoPathSetting: View {
 
 /// The helper's stderr (its last 50 lines), refreshed every second.
 struct HelperLog: View {
-    let transport: ProcessTransport?
+    let session: Session?
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
-            let lines = transport?.stderrTail ?? []
+            let lines = session?.stderrTail ?? []
             ScrollView {
                 Text(lines.isEmpty ? "No helper output." : lines.joined(separator: "\n"))
                     .font(.caption.monospaced())

@@ -97,8 +97,14 @@ public final class AppModel {
     private var currentRun: SortRun?
     /// `stop()` was called before `api.sort` returned a run.
     private var stopRequested = false
-    /// A playlist's rows are being fetched; runs wait for them.
-    private var loadingRows = false
+    /// A selection's rows are being fetched; runs wait for them.
+    public private(set) var loadingRows = false
+
+    /// Preview and Sort can start: a (non-tuning) playlist is selected, its rows have
+    /// loaded, nothing is running, and no `config` banner is showing.
+    public var canRun: Bool {
+        false  // stub
+    }
 
     private var isRunning: Bool { runState != .idle }
 

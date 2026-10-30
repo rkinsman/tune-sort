@@ -32,7 +32,9 @@ struct TuneSortApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let state = AppState()
+    let state = AppState(defaults: .standard, helperArguments: helperArguments()) { url, args in
+        try ProcessTransport(executable: url, arguments: args)
+    }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
@@ -42,153 +44,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// What the window shows: the helper's state, then the app once it has said hello.
-enum Phase {
-    case starting
-    case ready(Session)
-    /// The helper executable wasn't found at `path`.
-    case setup(path: String)
-    /// `hello` reported another protocol version. Nothing else runs.
-    case mismatch(String)
-    /// The helper failed to start for another reason.
-    case failed(String, stderrTail: [String])
-}
-
-/// One running helper and the view models that talk to it.
-@MainActor
-final class Session {
-    let transport: ProcessTransport
-    let client: HelperClient
-    let app: AppModel
-    let panel: SidePanelModel
-    let settings: SettingsModel
-
-    init(transport: ProcessTransport, client: HelperClient) {
-        self.transport = transport
-        self.client = client
-        app = AppModel(api: client)
-        panel = SidePanelModel(api: client, app: app)
-        settings = SettingsModel(api: client, defaults: .standard)
-    }
-}
-
-/// Owns the helper process: starts it, restarts it, and closes it on quit.
-@MainActor @Observable
-final class AppState {
-    static let repoPathKey = "repoPath"
-
-    var phase: Phase = .starting
-    /// The repo path the setup screen edits; the same default `SettingsModel` uses.
-    var repoPath: String {
-        didSet { UserDefaults.standard.set(repoPath, forKey: Self.repoPathKey) }
-    }
-
-    @ObservationIgnored private var transport: ProcessTransport?
-    @ObservationIgnored private var started = false
-
-    init() {
-        repoPath = Self.savedRepoPath()
-    }
-
-    /// A helper is being started; restart controls are disabled meanwhile.
-    var isStarting: Bool {
-        if case .starting = phase { return true }
-        return false
-    }
-
-    var session: Session? {
-        if case .ready(let s) = phase { return s }
-        return nil
-    }
-
-    private static func savedRepoPath() -> String {
-        UserDefaults.standard.string(forKey: repoPathKey)
-            ?? NSString(string: "~/code/tune-sort").expandingTildeInPath
-    }
-
-    /// The helper's arguments: `serve`, or in debug builds `TUNESORT_HELPER_ARGS`
-    /// (space-separated) when set, e.g. to point at a scratch cache.
-    static func helperArguments() -> [String] {
-        #if DEBUG
-            if let raw = ProcessInfo.processInfo.environment["TUNESORT_HELPER_ARGS"] {
-                let args = raw.split(separator: " ").map(String.init)
-                if !args.isEmpty { return args }
-            }
-        #endif
-        return ["serve"]
-    }
-
-    /// Starts the helper once; later calls do nothing.
-    func startIfNeeded() async {
-        guard !started else { return }
-        started = true
-        await start()
-    }
-
-    /// Closes the current helper and starts a new one, keeping the instrument.
-    func restart() async {
-        guard !isStarting else { return }
-        let instrument = session?.app.instrument
-        shutdown()
-        repoPath = Self.savedRepoPath()
-        await start(instrument: instrument)
-    }
-
-    /// Closes the helper's stdin, which cancels a running sort; the helper then exits.
-    func shutdown() {
-        transport?.close()
-        transport = nil
-    }
-
-    private func start(instrument: Instrument? = nil) async {
-        phase = .starting
-        let root = URL(fileURLWithPath: NSString(string: repoPath).expandingTildeInPath)
-        let helper = root.appendingPathComponent(".venv/bin/tune-sort")
-        let t: ProcessTransport
-        do {
-            t = try ProcessTransport(executable: helper, arguments: Self.helperArguments())
-        } catch ClientError.helperNotFound(let path) {
-            phase = .setup(path: path)
-            return
-        } catch {
-            phase = .failed("Couldn't start the helper at \(helper.path): \(error.localizedDescription)",
-                            stderrTail: [])
-            return
+/// The helper's arguments: `serve`, or in debug builds `TUNESORT_HELPER_ARGS`
+/// (space-separated) when set, e.g. to point at a scratch cache.
+func helperArguments() -> [String] {
+    #if DEBUG
+        if let raw = ProcessInfo.processInfo.environment["TUNESORT_HELPER_ARGS"] {
+            let args = raw.split(separator: " ").map(String.init)
+            if !args.isEmpty { return args }
         }
-        transport = t
-        let client = HelperClient(transport: t)
-        do {
-            try await client.start()
-        } catch ClientError.protocolMismatch(let helperVersion, let expected) {
-            t.close()
-            // A restart while hello was pending owns `transport` and `phase` now.
-            guard transport === t else { return }
-            transport = nil
-            phase = .mismatch(
-                "Helper speaks protocol \(helperVersion), the app expects \(expected). Pull and rebuild.")
-            return
-        } catch {
-            var tail = t.stderrTail
-            if case ClientError.helperExited(let errTail) = error, !errTail.isEmpty { tail = errTail }
-            t.close()
-            guard transport === t else { return }  // restarted meanwhile
-            transport = nil
-            phase = .failed("The helper at \(helper.path) didn't start.", stderrTail: tail)
-            return
-        }
-        guard transport === t else {  // restarted meanwhile
-            t.close()
-            return
-        }
-        let session = Session(transport: t, client: client)
-        phase = .ready(session)
-        if let instrument, instrument != session.app.instrument {
-            await session.app.setInstrument(instrument)
-        } else {
-            await session.app.load()
-        }
-        await session.settings.load()
-    }
+    #endif
+    return ["serve"]
 }
 
 enum SelfTest {
