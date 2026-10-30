@@ -82,6 +82,45 @@ example `D A D G` or `D A D G B E`. Enharmonic spellings are treated as the same
 so D# G# C# F# and Eb Ab Db Gb both land in `Bass – Eb Standard`. For bass, a 6-string
 guitar tuning such as E A D G B E is read as the bass's lowest four strings (E Standard).
 
+## Mac app
+
+TuneSort.app is a window onto the same commands: a sidebar of your playlists (plus Needs
+review and All songs), a song table with each song's tuning, and a panel for the selected
+song where you can pick a review match, type a tuning, change it or clear it. **Preview**
+is a dry run; **Sort** asks before changing Music. Settings (⌘,) holds the source order
+per instrument, the repo path and the helper's log.
+
+Building it needs Xcode (for the macOS SDK):
+
+```bash
+scripts/build-mac-app        # release build, ad-hoc signed
+open mac/TuneSort.app
+```
+
+The app lands in `mac/TuneSort.app`; drag it to `/Applications` if you like. It runs the
+helper from this repo, at `<repo>/.venv/bin/tune-sort`, so run `uv sync` first. The repo
+path defaults to `~/code/tune-sort`; if the helper isn't there the app shows a setup
+screen where you can change it (it's also in Settings).
+
+The first time the app reads or changes Music, macOS asks whether TuneSort may control
+Music. Allow it. If you said no, the app shows a button that opens System Settings →
+Privacy & Security → Automation, where you can turn it back on.
+
+Quitting the app stops the helper; a running sort is cancelled.
+
+For the Swift code in `mac/`: `swift build` and `swift test` from `mac/`. Debug builds
+read `TUNESORT_HELPER_ARGS` (space-separated) in place of the helper's `serve` arguments,
+for example `serve --cache /tmp/tunings.db --config /tmp/config.toml` to try the app on a
+scratch cache.
+
+### Helper for the Mac app
+
+`uv run tune-sort serve` runs the long-lived helper that the TuneSort Mac app drives. It
+reads one JSON request per line on stdin (`{"id": 1, "cmd": "hello", "args": {}}`), writes
+JSON replies on stdout and exits when stdin closes. Diagnostics go to stderr. It accepts
+`--cache PATH` and `--config PATH` like the other commands. The protocol is described in
+`docs/superpowers/specs/2026-10-29-mac-app-design.md`.
+
 ## Development
 
 ```bash

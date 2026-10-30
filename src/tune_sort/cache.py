@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS tunings (
     song_key TEXT PRIMARY KEY,
     pitch_classes TEXT NOT NULL,
     source TEXT NOT NULL,
-    confirmed INTEGER NOT NULL CHECK (confirmed IN (0, 1))
+    confirmed INTEGER NOT NULL CHECK (confirmed IN (0, 1)),
+    artist TEXT,
+    title TEXT
 );
 CREATE TABLE IF NOT EXISTS review (
     song_key TEXT PRIMARY KEY,
@@ -40,6 +42,13 @@ class Entry:
     tuning: Tuning
     source: str  # a source's Match.source, or "manual"
     confirmed: bool  # set by the user rather than a lookup
+
+
+@dataclass(frozen=True)
+class CachedSong:
+    artist: str  # display names as given to put (normalised for legacy rows)
+    title: str
+    entry: Entry
 
 
 @dataclass(frozen=True)
@@ -113,6 +122,12 @@ class Cache:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(str(path))
         self._db.executescript(_SCHEMA)
+        # Files written before display names were stored lack these columns.
+        columns = {row[1] for row in self._db.execute("PRAGMA table_info(tunings)")}
+        with self._db:
+            for name in ("artist", "title"):
+                if name not in columns:
+                    self._db.execute(f"ALTER TABLE tunings ADD COLUMN {name} TEXT")
 
     def get(self, artist: str, title: str) -> Optional[Entry]:
         row = self._db.execute(
@@ -130,14 +145,47 @@ class Cache:
         key = self._key(artist, title)
         with self._db:
             self._db.execute(
-                "INSERT OR REPLACE INTO tunings VALUES (?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO tunings"
+                " (song_key, pitch_classes, source, confirmed, artist, title)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     key,
                     json.dumps(list(entry.tuning.pitch_classes)),
                     entry.source,
                     int(entry.confirmed),
+                    artist,
+                    title,
                 ),
             )
+            self._db.execute("DELETE FROM review WHERE song_key = ?", (key,))
+
+    def entries(self) -> list[CachedSong]:
+        """All entries for this cache's instrument, sorted case-insensitively by artist,
+        then title. Rows written before display names were stored use the normalised
+        names."""
+        rows = self._db.execute(
+            "SELECT song_key, pitch_classes, source, confirmed, artist, title FROM tunings"
+        ).fetchall()
+        songs = []
+        for key, pcs, source, confirmed, artist, title in rows:
+            if _key_instrument(key) != self.instrument:
+                continue
+            if artist is None or title is None:
+                body = key.split("\x1e", 1)[1] if "\x1e" in key else key
+                key_artist, _, key_title = body.partition("\x1f")
+                artist = key_artist if artist is None else artist
+                title = key_title if title is None else title
+            tuning = from_pitch_classes(json.loads(pcs), self.instrument)
+            songs.append(CachedSong(artist, title, Entry(tuning, source, bool(confirmed))))
+        songs.sort(key=lambda c: (c.artist.casefold(), c.title.casefold()))
+        return songs
+
+    def delete(self, artist: str, title: str) -> None:
+        """Remove the song's entry and its review-queue item, matching as get does.
+        Does nothing if the song is not cached."""
+        key = self._key(artist, title)
+        with self._db:
+            self._db.execute("DELETE FROM tunings WHERE song_key = ?", (key,))
             self._db.execute("DELETE FROM review WHERE song_key = ?", (key,))
 
     def add_review(self, artist: str, title: str, candidates: list[Match]) -> None:
