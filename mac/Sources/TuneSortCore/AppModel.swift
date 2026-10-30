@@ -82,7 +82,6 @@ public final class AppModel {
                     || $0.title.localizedCaseInsensitiveContains(q)
             }
         }
-        set { allRows = newValue }
     }
 
     /// Figures from the last finished preview, valid only while nothing relevant changed.
@@ -96,6 +95,12 @@ public final class AppModel {
     }
     private var lastPreview: PreviewFigures?
     private var currentRun: SortRun?
+    /// `stop()` was called before `api.sort` returned a run.
+    private var stopRequested = false
+    /// A playlist's rows are being fetched; runs wait for them.
+    private var loadingRows = false
+
+    private var isRunning: Bool { runState != .idle }
 
     public init(api: HelperAPI) {
         self.api = api
@@ -104,6 +109,7 @@ public final class AppModel {
     // MARK: loading
 
     public func load() async {
+        guard !isRunning else { return }
         banner = nil
         let i = instrument
         do {
@@ -119,22 +125,29 @@ public final class AppModel {
     }
 
     public func select(_ item: SidebarItem) async {
+        guard !isRunning else { return }
         banner = nil
         selection = item
         selectedRowID = nil
+        allRows = []
+        loadingRows = true
         let i = instrument
         do {
             let loaded = try await fetchRows(item, i)
             guard selection == item, i == instrument else { return }
             allRows = loaded
+            loadingRows = false
         } catch {
             guard selection == item else { return }
             allRows = []
+            loadingRows = false
             show(error)
         }
     }
 
     public func setInstrument(_ i: Instrument) async {
+        guard !isRunning else { return }
+        loadingRows = false
         instrument = i
         selection = nil
         selectedRowID = nil
@@ -152,9 +165,9 @@ public final class AppModel {
         guard let item = selection else { return }
         do {
             if let review = try? await api.reviewList(i), i == instrument { reviewCount = review.count }
-            guard runState == .idle else { return }
+            guard !isRunning else { return }
             let loaded = try await fetchRows(item, i)
-            guard selection == item, i == instrument else { return }
+            guard !isRunning, !loadingRows, selection == item, i == instrument else { return }
             if case .playlist = item {
                 if let fresh = loaded.first(where: { $0.artist == artist && $0.title == title }),
                    let idx = allRows.firstIndex(where: { $0.artist == artist && $0.title == title }) {
@@ -212,13 +225,18 @@ public final class AppModel {
     }
 
     public func stop() async {
-        guard let run = currentRun else { return }
-        do { try await api.cancel(run) } catch { show(error) }
+        if let run = currentRun {
+            do { try await api.cancel(run) } catch { show(error) }
+        } else if isRunning {
+            stopRequested = true
+        }
     }
 
     private func run(dryRun: Bool) async {
-        guard case .playlist(let name)? = selection, runState == .idle else { return }
+        guard case .playlist(let name)? = selection, runState == .idle, !loadingRows else { return }
         banner = nil
+        lastSummary = nil
+        stopRequested = false
         let i = instrument
         let sources = sourcesOverride
         if !dryRun { lastPreview = nil }
@@ -232,11 +250,12 @@ public final class AppModel {
                 }
             }
         }
-        defer { currentRun = nil }
+        defer { currentRun = nil; stopRequested = false }
         do {
             let run = try await api.sort(
                 SortRequest(instrument: i, playlist: name, dryRun: dryRun, order: sources))
             currentRun = run
+            if stopRequested { try? await api.cancel(run) }
             var done = 0
             var total = allRows.count
             for try await update in run.updates {
@@ -309,6 +328,7 @@ public final class AppModel {
     }
 
     private func show(_ error: Error) {
+        if error is CancellationError { return }
         if let e = error as? ClientError {
             switch e {
             case .helperExited(let tail):
