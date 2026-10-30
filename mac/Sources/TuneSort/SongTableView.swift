@@ -4,6 +4,8 @@ import TuneSortCore
 /// The selection's songs: Song, Tuning and Source, with the last run's summary below.
 struct SongTableView: View {
     @Bindable var app: AppModel
+    /// The row under the pointer, highlighted like Music's song list.
+    @State private var hoveredRowID: SongRow.ID?
 
     var body: some View {
         if app.selection == nil {
@@ -21,16 +23,33 @@ struct SongTableView: View {
                             Text(row.title)
                             Text(row.artist).font(.caption).foregroundStyle(.secondary)
                         }
+                        .modifier(hover(row))
                     }
-                    TableColumn("Tuning") { row in TuningCell(status: row.status) }
-                        .width(min: 120, ideal: 160)
-                    TableColumn("Source") { row in SourceCell(status: row.status) }
-                        .width(min: 80, ideal: 110)
+                    TableColumn("Tuning") { row in
+                        TuningCell(status: row.status).modifier(hover(row))
+                    }
+                    .width(min: 120, ideal: 160)
+                    TableColumn("Source") { row in
+                        SourceCell(status: row.status).modifier(hover(row))
+                    }
+                    .width(min: 80, ideal: 110)
                 }
                 Divider()
                 footer
             }
         }
+    }
+
+    private func hover(_ row: SongRow) -> RowHover {
+        RowHover(
+            isHovered: hoveredRowID == row.id && app.selectedRowID != row.id,
+            onHover: { inside in
+                if inside {
+                    hoveredRowID = row.id
+                } else if hoveredRowID == row.id {
+                    hoveredRowID = nil
+                }
+            })
     }
 
     private var searchField: some View {
@@ -61,6 +80,26 @@ struct SongTableView: View {
         .font(.callout)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
+    }
+}
+
+/// Fills a table cell, tracks the pointer over it and paints the hover highlight. Applied
+/// to every cell of a row, so the whole row lights up; the negative padding covers the
+/// gaps between columns. Table has no row-hover API of its own.
+struct RowHover: ViewModifier {
+    let isHovered: Bool
+    let onHover: (Bool) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onHover(perform: onHover)
+            .background(
+                Rectangle()
+                    .fill(isHovered ? Color.primary.opacity(0.07) : .clear)
+                    .padding(.horizontal, -6)
+                    .padding(.vertical, -4))
     }
 }
 
