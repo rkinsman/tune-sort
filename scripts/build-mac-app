@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Build the TuneSort Mac app: compiles mac/ in release mode, assembles
+# mac/TuneSort.app from the binary and mac/Resources/Info.plist, and ad-hoc signs it.
+set -euo pipefail
+
+usage() {
+    cat <<USAGE
+Usage: scripts/build-mac-app [-h|--help]
+
+Builds mac/TuneSort.app (release build, ad-hoc signed). Safe to re-run.
+Requires: swift, codesign (Xcode command line tools).
+USAGE
+}
+
+case "${1:-}" in
+    -h|--help) usage; exit 0 ;;
+    "") ;;
+    *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
+esac
+
+for cmd in swift codesign; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "error: '$cmd' not found; install Xcode and run xcode-select" >&2
+        exit 1
+    fi
+done
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+mac="$root/mac"
+app="$mac/TuneSort.app"
+
+cd "$mac"
+swift build -c release
+bin_dir="$(swift build -c release --show-bin-path)"
+
+rm -rf "$app"
+mkdir -p "$app/Contents/MacOS"
+cp "$bin_dir/TuneSort" "$app/Contents/MacOS/TuneSort"
+cp "$mac/Resources/Info.plist" "$app/Contents/Info.plist"
+
+codesign --force --sign - "$app"
+echo "Built $app"
