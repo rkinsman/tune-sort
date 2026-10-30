@@ -38,6 +38,15 @@ final class FakeHelperAPI: HelperAPI, @unchecked Sendable {
         var sortRequests: [SortRequest] = []
         var cancelledRunIDs: [Int] = []
         var continuations: [AsyncThrowingStream<SortUpdate, Error>.Continuation] = []
+        /// Scripted describe replies by tuning text (default: success echoing the text).
+        var describeResults: [String: Result<TuningInfo, Error>] = [:]
+        /// describe blocks (after being logged) until the gate for its text opens.
+        var describeGates: [String: Gate] = [:]
+        var setError: Error?
+        var deleteError: Error?
+        /// When set, setOrder returns/throws this instead of echoing its argument.
+        var setOrderReply: Result<[String], Error>?
+        var setOrderArgs: [(Instrument, [String]?)] = []
     }
 
     private let lock = NSLock()
@@ -49,6 +58,7 @@ final class FakeHelperAPI: HelperAPI, @unchecked Sendable {
     private func log(_ s: String) { lock.withLock { state.calls.append(s) } }
 
     var calls: [String] { read { $0.calls } }
+    var setOrderArgs: [(Instrument, [String]?)] { read { $0.setOrderArgs } }
     var sortRequests: [SortRequest] { read { $0.sortRequests } }
     var cancelledRunIDs: [Int] { read { $0.cancelledRunIDs } }
 
@@ -75,6 +85,8 @@ final class FakeHelperAPI: HelperAPI, @unchecked Sendable {
 
     func setOrder(_ i: Instrument, _ order: [String]?) async throws -> [String] {
         log("setOrder:\(i.rawValue)")
+        lock.withLock { state.setOrderArgs.append((i, order)) }
+        if let reply = read({ $0.setOrderReply }) { return try reply.get() }
         return order ?? []
     }
 
@@ -86,11 +98,14 @@ final class FakeHelperAPI: HelperAPI, @unchecked Sendable {
 
     func describe(_ i: Instrument, _ tuning: String) async throws -> TuningInfo {
         log("describe:\(i.rawValue):\(tuning)")
+        await read({ $0.describeGates[tuning] })?.wait()
+        if let r = read({ $0.describeResults[tuning] }) { return try r.get() }
         return TuningInfo(name: tuning, playlistName: "\(i.rawValue) – \(tuning)", notes: "")
     }
 
     func set(_ i: Instrument, artist: String, title: String, tuning: String) async throws -> CachedSong {
         log("set:\(i.rawValue):\(artist):\(title):\(tuning)")
+        if let e = read({ $0.setError }) { throw e }
         return CachedSong(artist: artist, title: title,
                           tuning: TuningInfo(name: tuning, playlistName: "", notes: ""),
                           source: "manual", confirmed: true)
@@ -104,6 +119,7 @@ final class FakeHelperAPI: HelperAPI, @unchecked Sendable {
 
     func delete(_ i: Instrument, artist: String, title: String) async throws {
         log("delete:\(i.rawValue):\(artist):\(title)")
+        if let e = read({ $0.deleteError }) { throw e }
     }
 
     func sort(_ request: SortRequest) async throws -> SortRun {
