@@ -28,6 +28,24 @@ assert_icon() {
   assert_output "AppIcon"
 }
 
+# Build a fake repo in the test tmp dir containing a copy of the script and
+# the real Info.plist (and, if $1 is "icon", a dummy AppIcon.icns), with fake
+# swift/codesign on PATH, and an existing bundle at <fake>/Old.app.
+make_fake_repo() {
+  FAKE="$BATS_TEST_TMPDIR/fake"
+  mkdir -p "$FAKE/scripts" "$FAKE/mac/Resources" "$FAKE/bin" "$FAKE/Old.app/Contents"
+  cp "$REPO/scripts/build-mac-app" "$FAKE/scripts/build-mac-app"
+  chmod +x "$FAKE/scripts/build-mac-app"
+  cp "$REPO/mac/Resources/Info.plist" "$FAKE/mac/Resources/Info.plist"
+  if [ "${1:-}" = "icon" ]; then
+    printf 'icns' > "$FAKE/mac/Resources/AppIcon.icns"
+  fi
+  printf '#!/bin/sh\nexit 0\n' > "$FAKE/bin/swift"
+  printf '#!/bin/sh\nexit 0\n' > "$FAKE/bin/codesign"
+  chmod +x "$FAKE/bin/swift" "$FAKE/bin/codesign"
+  : > "$FAKE/Old.app/Contents/marker"
+}
+
 BASIC_TOOLS=(bash sh env dirname basename mkdir rm cp mv cat pwd ls ln chmod touch sed grep awk tr uname mktemp cut head tail sort printf readlink realpath find xargs plutil)
 
 @test "--help prints usage mentioning --out and exits 0" {
@@ -81,6 +99,24 @@ BASIC_TOOLS=(bash sh env dirname basename mkdir rm cp mv cat pwd ls ln chmod tou
   assert_failure
   assert_output --partial "codesign"
   [ ! -e "$BATS_TEST_TMPDIR/NoSign.app" ]
+}
+
+@test "missing AppIcon.icns fails before touching an existing bundle" {
+  make_fake_repo
+  [ ! -e "$FAKE/mac/Resources/AppIcon.icns" ]
+  PATH="$FAKE/bin:$PATH" run "$FAKE/scripts/build-mac-app" --out "$FAKE/Old.app"
+  assert_failure
+  assert_output --partial "AppIcon.icns"
+  [ -e "$FAKE/Old.app/Contents/marker" ]
+}
+
+@test "missing Info.plist fails before touching an existing bundle" {
+  make_fake_repo icon
+  rm "$FAKE/mac/Resources/Info.plist"
+  PATH="$FAKE/bin:$PATH" run "$FAKE/scripts/build-mac-app" --out "$FAKE/Old.app"
+  assert_failure
+  assert_output --partial "Info.plist"
+  [ -e "$FAKE/Old.app/Contents/marker" ]
 }
 
 @test "full build produces a signed bundle with icon, and can be re-run" {
