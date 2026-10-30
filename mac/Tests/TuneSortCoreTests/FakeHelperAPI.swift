@@ -3,6 +3,21 @@ import Foundation
 
 struct FakeError: Error, Equatable { let tag: String }
 
+/// A bounded, test-controlled gate. Calls that wait on it return once it is opened
+/// (or after `timeout` seconds, so a broken test never hangs the suite).
+final class Gate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var opened = false
+    func open() { lock.withLock { opened = true } }
+    var isOpen: Bool { lock.withLock { opened } }
+    func wait(timeout: Double = 10) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !isOpen && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+    }
+}
+
 /// Scripted, call-logging HelperAPI. Sort streams are driven by the test.
 final class FakeHelperAPI: HelperAPI, @unchecked Sendable {
     struct State {
@@ -13,6 +28,12 @@ final class FakeHelperAPI: HelperAPI, @unchecked Sendable {
         var reviewList: [Instrument: Result<[ReviewItem], Error>] = [:]
         var entries: [Instrument: Result<[CachedSong], Error>] = [:]
         var sortError: Error?
+        /// When set, the call blocks (after being logged) until the gate opens.
+        var playlistsGate: Gate?
+        var tracksGate: [String: Gate] = [:]
+        var entriesGate: Gate?
+        var reviewListGate: Gate?
+        var sortGate: Gate?
         var calls: [String] = []
         var sortRequests: [SortRequest] = []
         var cancelledRunIDs: [Int] = []
@@ -37,11 +58,13 @@ final class FakeHelperAPI: HelperAPI, @unchecked Sendable {
 
     func playlists() async throws -> [String] {
         log("playlists")
+        await read({ $0.playlistsGate })?.wait()
         return try read { $0.playlists }.get()
     }
 
     func tracks(_ i: Instrument, playlist: String) async throws -> [TrackState] {
         log("tracks:\(i.rawValue):\(playlist)")
+        await read({ $0.tracksGate[playlist] })?.wait()
         return try (read { $0.tracks[playlist] } ?? .success([])).get()
     }
 
@@ -57,6 +80,7 @@ final class FakeHelperAPI: HelperAPI, @unchecked Sendable {
 
     func reviewList(_ i: Instrument) async throws -> [ReviewItem] {
         log("reviewList:\(i.rawValue)")
+        await read({ $0.reviewListGate })?.wait()
         return try (read { $0.reviewList[i] } ?? .success([])).get()
     }
 
@@ -74,6 +98,7 @@ final class FakeHelperAPI: HelperAPI, @unchecked Sendable {
 
     func entries(_ i: Instrument) async throws -> [CachedSong] {
         log("entries:\(i.rawValue)")
+        await read({ $0.entriesGate })?.wait()
         return try (read { $0.entries[i] } ?? .success([])).get()
     }
 
@@ -83,13 +108,11 @@ final class FakeHelperAPI: HelperAPI, @unchecked Sendable {
 
     func sort(_ request: SortRequest) async throws -> SortRun {
         log("sort")
-        if let e = read({ $0.sortError }) {
-            lock.withLock { state.sortRequests.append(request) }
-            throw e
-        }
+        lock.withLock { state.sortRequests.append(request) }
+        await read({ $0.sortGate })?.wait()
+        if let e = read({ $0.sortError }) { throw e }
         let (stream, cont) = AsyncThrowingStream<SortUpdate, Error>.makeStream()
         let id = lock.withLock { () -> Int in
-            state.sortRequests.append(request)
             state.continuations.append(cont)
             return Self.firstRunID + state.continuations.count - 1
         }
@@ -111,10 +134,19 @@ final class FakeHelperAPI: HelperAPI, @unchecked Sendable {
     func finishStream() { latest?.finish() }
     func finishStream(throwing error: Error) { latest?.finish(throwing: error) }
 
-    /// Waits (bounded) until `sort` has been called at least `count` times.
+    /// Waits (bounded) until `sort` has returned a run at least `count` times.
     func waitForSort(_ count: Int = 1, timeout: Double = 5) async throws {
         let deadline = Date().addingTimeInterval(timeout)
         while read({ $0.continuations.count }) < count {
+            if Date() > deadline { throw TestTimeout() }
+            try await Task.sleep(nanoseconds: 2_000_000)
+        }
+    }
+
+    /// Waits (bounded) until the call log holds `count` entries equal to `call`.
+    func waitForCall(_ call: String, count: Int = 1, timeout: Double = 5) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while read({ $0.calls.filter { $0 == call }.count }) < count {
             if Date() > deadline { throw TestTimeout() }
             try await Task.sleep(nanoseconds: 2_000_000)
         }

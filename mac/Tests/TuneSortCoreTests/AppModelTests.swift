@@ -422,4 +422,156 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(m.reviewCount, 1)
         XCTAssertTrue(api.calls.contains("reviewList:guitar"))
     }
+
+    // MARK: reentrancy (review follow-ups)
+
+    private func m_isRunning(_ m: AppModel) -> Bool {
+        if case .running = m.runState { return true }
+        return false
+    }
+
+    /// 1. While a run is active, select / setInstrument / load do nothing.
+    func testSelectionChangesAreIgnoredWhileRunIsActive() async throws {
+        let (m, api) = try await playlistModel { s in s.tracks["Other"] = .success([self.ts("X", "Y", .unknown)]) }
+        let task = try await startPreview(m, api)
+        try await waitUntil("running") { self.m_isRunning(m) }
+        let before = api.calls
+
+        await m.select(.playlist("Other"))
+        await m.select(.allSongs)
+        await m.setInstrument(.guitar)
+        await m.load()
+
+        XCTAssertEqual(api.calls, before, "no API calls may be made while a run is active")
+        XCTAssertEqual(m.selection, .playlist("PL"))
+        XCTAssertEqual(m.instrument, .bass)
+        XCTAssertEqual(m.playlists, ["PL"])
+        XCTAssertEqual(m.rows.map(\.artist), ["A", "B"])
+
+        // The run's events still apply to its own rows.
+        api.yield(.event(.start(SortStart(i: 1, total: 2, artist: "A", title: "One"))))
+        try await waitUntil("lookingUp") { self.row(m, "A", "One")?.status == .lookingUp }
+        api.yield(.event(.done(SortDone(artist: "A", title: "One", status: .added, tuning: dropD,
+                                        source: "web", playlist: "Bass – Drop D"))))
+        api.yield(.finished(report(added: ["Bass – Drop D": [track("A", "One")]])))
+        api.finishStream()
+        await task.value
+
+        XCTAssertEqual(m.rows.map(\.artist), ["A", "B"])
+        XCTAssertEqual(row(m, "A", "One")?.status, .cached(dropD, source: "web", confirmed: false))
+        XCTAssertEqual(m.lastSummary, "Preview: 1 would be added to 1 playlist")
+        XCTAssertEqual(m.selection, .playlist("PL"))
+        XCTAssertEqual(m.instrument, .bass)
+    }
+
+    /// 2. select(.playlist) clears rows at once; preview/sort do nothing while rows are loading.
+    /// The runs are fired in tasks (not awaited) so a misbehaving model cannot hang the suite.
+    func testSelectClearsRowsImmediatelyAndRunsAreBlockedWhileLoading() async throws {
+        let (m, api) = makeModel { s in
+            s.tracks["Mix"] = .success([self.ts("M", "One", .unknown)])
+            s.tracks["PL"] = .success([self.ts("A", "One", .unknown), self.ts("B", "Two", .unknown)])
+        }
+        await m.select(.playlist("Mix"))
+        XCTAssertEqual(m.rows.count, 1)
+
+        let gate = Gate()
+        api.configure { $0.tracksGate["PL"] = gate }
+        let selectTask = Task { await m.select(.playlist("PL")) }
+        try await api.waitForCall("tracks:bass:PL")
+        XCTAssertEqual(m.rows, [], "rows must be cleared before the fetch returns")
+
+        let previewTask = Task { await m.preview() }
+        let sortTask = Task { await m.sort() }
+        try await Task.sleep(nanoseconds: 200_000_000)
+        let requests = api.sortRequests.count
+        // Unblock anything that wrongly started, so nothing is left hanging.
+        api.finishStream()
+        api.finishStream()
+        XCTAssertEqual(requests, 0, "no sort while the playlist is still loading")
+        XCTAssertEqual(m.runState, .idle)
+
+        gate.open()
+        await selectTask.value
+        XCTAssertEqual(m.rows.count, 2)
+        _ = previewTask
+        _ = sortTask
+    }
+
+    /// 3. A refreshRow fetch that completes after a run started must not overwrite the run's rows.
+    func testRefreshRowFinishingAfterRunStartedDoesNotOverwriteRows() async throws {
+        let (m, api) = try await playlistModel()
+        let gate = Gate()
+        api.configure { $0.tracksGate["PL"] = gate }
+        let refresh = Task { await m.refreshRow(artist: "A", title: "One") }
+        try await api.waitForCall("tracks:bass:PL", count: 2)
+
+        // What the refresh will return if it is (wrongly) applied.
+        api.configure { s in
+            s.tracks["PL"] = .success([self.ts("A", "One", .cached(tuning: self.dropD, source: "manual", confirmed: true)),
+                                       self.ts("B", "Two", .unknown)])
+        }
+        let task = try await startPreview(m, api)
+        api.yield(.event(.start(SortStart(i: 1, total: 2, artist: "A", title: "One"))))
+        try await waitUntil("lookingUp") { self.row(m, "A", "One")?.status == .lookingUp }
+
+        gate.open()
+        await refresh.value
+        XCTAssertEqual(row(m, "A", "One")?.status, .lookingUp)
+
+        api.yield(.finished(report()))
+        api.finishStream()
+        await task.value
+        XCTAssertEqual(row(m, "A", "One")?.status, .unknown)
+    }
+
+    /// 5. CancellationError from the API sets no banner.
+    func testCancellationErrorSetsNoBanner() async throws {
+        let (m, _) = makeModel { s in
+            s.playlists = .failure(CancellationError())
+            s.tracks["PL"] = .failure(CancellationError())
+        }
+        await m.load()
+        XCTAssertNil(m.banner)
+        await m.select(.playlist("PL"))
+        XCTAssertNil(m.banner)
+    }
+
+    /// 6. stop() before api.sort returns still cancels once the run exists.
+    func testStopBeforeSortReturnsStillCancelsRun() async throws {
+        let (m, api) = try await playlistModel()
+        let gate = Gate()
+        api.configure { $0.sortGate = gate }
+        let task = Task { await m.preview() }
+        try await api.waitForCall("sort")
+
+        let stopTask = Task { await m.stop() }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        gate.open()
+
+        try await waitUntil("cancel call") { !api.cancelledRunIDs.isEmpty }
+        XCTAssertEqual(api.cancelledRunIDs, [FakeHelperAPI.firstRunID])
+
+        api.yield(.finished(report(cancelled: true)))
+        api.finishStream()
+        await task.value
+        await stopTask.value
+        XCTAssertEqual(m.runState, .idle)
+    }
+
+    /// 7. lastSummary is cleared when a new run starts.
+    func testLastSummaryClearedWhenNewRunStarts() async throws {
+        let (m, api) = try await playlistModel()
+        try await finishedPreview(m, api, report(added: ["Bass – Drop D": [track("A", "1")]]))
+        XCTAssertNotNil(m.lastSummary)
+
+        let task = Task { await m.sort() }
+        try await api.waitForSort(2)
+        try await waitUntil("running") { self.m_isRunning(m) }
+        XCTAssertNil(m.lastSummary)
+
+        api.yield(.finished(report()))
+        api.finishStream()
+        await task.value
+        XCTAssertEqual(m.lastSummary, "Added 0 to 0 playlists")
+    }
 }
