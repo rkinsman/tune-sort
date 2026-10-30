@@ -49,6 +49,13 @@ final class FakeHelperAPI: HelperAPI, @unchecked Sendable {
         var setOrderArgs: [(Instrument, [String]?)] = []
         /// setOrder blocks (after being logged) until this gate opens.
         var setOrderGate: Gate?
+        /// Scripted reviewCounts replies per instrument (default: success of an empty object).
+        var reviewCounts: [Instrument: Result<[String: Int], Error>] = [:]
+        /// reviewCounts blocks (after being logged) until this gate opens.
+        var reviewCountsGate: Gate?
+        /// Per-call script: each reviewCounts call consumes the first entry (gate, then reply);
+        /// once empty, falls back to `reviewCounts` / `reviewCountsGate`.
+        var reviewCountsQueue: [(gate: Gate?, result: Result<[String: Int], Error>)] = []
     }
 
     private let lock = NSLock()
@@ -97,6 +104,19 @@ final class FakeHelperAPI: HelperAPI, @unchecked Sendable {
         log("reviewList:\(i.rawValue)")
         await read({ $0.reviewListGate })?.wait()
         return try (read { $0.reviewList[i] } ?? .success([])).get()
+    }
+
+    func reviewCounts(_ i: Instrument) async throws -> [String: Int] {
+        log("reviewCounts:\(i.rawValue)")
+        let queued: (gate: Gate?, result: Result<[String: Int], Error>)? = lock.withLock {
+            state.reviewCountsQueue.isEmpty ? nil : state.reviewCountsQueue.removeFirst()
+        }
+        if let queued {
+            await queued.gate?.wait()
+            return try queued.result.get()
+        }
+        await read({ $0.reviewCountsGate })?.wait()
+        return try (read { $0.reviewCounts[i] } ?? .success([:])).get()
     }
 
     func describe(_ i: Instrument, _ tuning: String) async throws -> TuningInfo {

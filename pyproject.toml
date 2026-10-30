@@ -24,6 +24,8 @@ testpaths = ["tests"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+# Vendored bats submodules for the shell tests.
+extend-exclude = ["tests/shell"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
@@ -38,6 +40,7 @@ ignore = ["UP045", "B008"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
+exclude = ["^tests/shell/"]
 
 [tool.setuptools.package-data]
 tune_sort = ["py.typed"]

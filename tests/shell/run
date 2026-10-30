@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Run shellcheck on the shell scripts in scripts/ (and on this script), then the bats tests.
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: tests/shell/run [-h|--help] [TEST_FILE.bats ...]
+
+Runs shellcheck on the shell scripts in scripts/ and on tests/shell/run, then
+runs the bats tests. With no arguments, runs every tests/shell/*.bats file;
+otherwise runs only the given files.
+
+Exits non-zero if shellcheck reports a problem or any test fails.
+EOF
+}
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+esac
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$repo_root"
+
+if ! command -v shellcheck >/dev/null 2>&1; then
+  echo "error: shellcheck not found. Install it and make sure it's on your PATH." >&2
+  exit 1
+fi
+
+bats="tests/shell/bats/bin/bats"
+if [ ! -x "$bats" ]; then
+  echo "error: bats not found at $bats. Run: git submodule update --init" >&2
+  exit 1
+fi
+
+# Collect shell scripts in scripts/ by their shebang, so other languages are skipped.
+scripts=(tests/shell/run)
+for file in scripts/*; do
+  [ -f "$file" ] || continue
+  if head -n 1 "$file" | grep -Eq '^#!.*([/ ](ba)?sh)([[:space:]]|$)'; then
+    scripts+=("$file")
+  fi
+done
+
+echo "==> shellcheck (${#scripts[@]} files)"
+shellcheck "${scripts[@]}"
+
+if [ "$#" -gt 0 ]; then
+  test_files=("$@")
+else
+  test_files=()
+  for file in tests/shell/*.bats; do
+    [ -f "$file" ] && test_files+=("$file")
+  done
+fi
+
+if [ "${#test_files[@]}" -eq 0 ]; then
+  echo "==> bats: no test files found in tests/shell/"
+  exit 0
+fi
+
+echo "==> bats"
+"$bats" "${test_files[@]}"

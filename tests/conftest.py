@@ -163,6 +163,9 @@ class FakeMusic:
             raise MusicError("no such playlist: " + playlist)
         return list(self.playlists[playlist])
 
+    def all_playlist_tracks(self) -> Dict[str, List[Track]]:
+        return {k: list(v) for k, v in self.playlists.items()}
+
     def ensure_playlist(self, name: str) -> bool:
         self.ensure_calls.append(name)
         if name in self.playlists:

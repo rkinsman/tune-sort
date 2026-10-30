@@ -187,6 +187,14 @@ _NAMED = re.compile(
 )
 
 
+def is_tuning_playlist(name: str, instrument: Instrument) -> bool:
+    """True if `name` has the shape of one of the instrument's tuning playlist names:
+    "<Prefix> – <tuning>" or "<Prefix> <N>-String – <tuning>" (en dash), e.g. "Bass – Drop D"
+    or "Guitar 7-String – B Standard"."""
+    prefix = re.escape(PLAYLIST_PREFIX[instrument])
+    return re.fullmatch(prefix + r"( [0-9]+-String)? \u2013 \S.*", name) is not None
+
+
 def parse_name(name: str, instrument: Instrument = "bass") -> Tuning:
     """Parse a tuning name typed by the user ("Drop D", "eb standard", "5-string B Standard")
     or a list of note names. Raises TuningParseError if not understood.

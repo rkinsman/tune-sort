@@ -7,9 +7,11 @@ from dataclasses import dataclass, field
 from typing import Literal, Optional
 
 from tune_sort.cache import Cache, Entry
+from tune_sort.matching import normalise_artist, normalise_title
 from tune_sort.music import Music, MusicError, Track
 from tune_sort.resolver import Resolution, resolve
 from tune_sort.sources import Match, Source
+from tune_sort.tuning import is_tuning_playlist
 
 Status = Literal["added", "already_present", "review", "lookup_failed", "add_error"]
 OnDone = Callable[[Track, Resolution, Status, Optional[str], Optional[str]], None]
@@ -148,3 +150,25 @@ def track_states(music: Music, playlist: str, cache: Cache) -> list[TrackState]:
         TrackState(t, cache.get(t.artist, t.name), cache.queued(t.artist, t.name))
         for t in music.get_tracks(playlist)
     ]
+
+
+def review_counts(music: Music, cache: Cache) -> dict[str, int]:
+    """For each of the user's playlists except the cache instrument's tuning playlists, how
+    many distinct songs in it are queued for review in `cache` (tracks matching the same
+    cache entry count once). Playlists with none are left out. A song in several playlists
+    counts in each. Reads Music once and changes nothing.
+    Raises MusicError if Music cannot be read."""
+    counts: dict[str, int] = {}
+    for name, tracks in music.all_playlist_tracks().items():
+        if is_tuning_playlist(name, cache.instrument):
+            continue
+        # Distinct songs, matched as cache keys are, so a song in the library twice (or
+        # under a remaster title) counts once and no count exceeds the review queue.
+        songs = {
+            (normalise_artist(t.artist), normalise_title(t.name))
+            for t in tracks
+            if cache.is_queued(t.artist, t.name)
+        }
+        if songs:
+            counts[name] = len(songs)
+    return counts

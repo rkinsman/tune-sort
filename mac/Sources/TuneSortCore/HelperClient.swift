@@ -27,6 +27,8 @@ public protocol HelperAPI: Sendable {
     /// `nil` restores the default order. Returns the new effective order.
     func setOrder(_ i: Instrument, _ order: [String]?) async throws -> [String]
     func reviewList(_ i: Instrument) async throws -> [ReviewItem]
+    /// For each playlist with songs in the review queue, how many: `review_counts`.
+    func reviewCounts(_ i: Instrument) async throws -> [String: Int]
     func describe(_ i: Instrument, _ tuning: String) async throws -> TuningInfo
     func set(_ i: Instrument, artist: String, title: String, tuning: String) async throws -> CachedSong
     func entries(_ i: Instrument) async throws -> [CachedSong]
@@ -104,6 +106,10 @@ public actor HelperClient: HelperAPI {
     {
         let args = ["instrument": i.rawValue, "artist": artist, "title": title, "tuning": tuning]
         return try await call("set", args, as: CachedSong.self)
+    }
+
+    public func reviewCounts(_ i: Instrument) async throws -> [String: Int] {
+        try await call("review_counts", ["instrument": i.rawValue], as: [String: Int].self)
     }
 
     public func entries(_ i: Instrument) async throws -> [CachedSong] {

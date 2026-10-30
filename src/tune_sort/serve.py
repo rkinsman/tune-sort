@@ -46,7 +46,7 @@ from tune_sort.cli import SourcesFactory, bad_tuning_message
 from tune_sort.config import SOURCE_NAMES, ConfigError, load_order, parse_order, save_order
 from tune_sort.music import Music, MusicError, Track
 from tune_sort.resolver import Resolution
-from tune_sort.sorter import Status, sort_playlist, track_states
+from tune_sort.sorter import Status, review_counts, sort_playlist, track_states
 from tune_sort.sources import Source
 from tune_sort.tuning import INSTRUMENTS, Instrument, Tuning, TuningParseError, parse_name
 from tune_sort.wire import (
@@ -196,6 +196,11 @@ def _review_list(session: _Session, args: dict[str, Any]) -> Any:
     ]
 
 
+def _review_counts(session: _Session, args: dict[str, Any]) -> Any:
+    instrument = _instrument(args)
+    return review_counts(session.music(), session.cache(instrument))
+
+
 def _describe(session: _Session, args: dict[str, Any]) -> Any:
     instrument = _instrument(args)
     text = _str(args, "tuning")
@@ -334,6 +339,7 @@ HANDLERS: dict[str, Handler] = {
     "sort": _sort,
     "cancel": _cancel,
     "review_list": _review_list,
+    "review_counts": _review_counts,
     "describe": _describe,
     "set": _set,
     "entries": _entries,

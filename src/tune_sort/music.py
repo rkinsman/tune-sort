@@ -29,6 +29,10 @@ class Music(Protocol):
         """Tracks in a playlist, in order. Raises MusicError if it doesn't exist."""
         ...
 
+    def all_playlist_tracks(self) -> dict[str, list[Track]]:
+        """Every user playlist's tracks, keyed by playlist name, read in one go."""
+        ...
+
     def ensure_playlist(self, name: str) -> bool:
         """Create the playlist if missing. Returns True if it was created."""
         ...
@@ -48,6 +52,13 @@ class AppleMusic:
     def get_tracks(self, playlist: str) -> list[Track]:
         rows = _run_jxa(_GET_TRACKS, playlist)
         return [Track(r["id"], r["name"], r["artist"], r["album"]) for r in rows]
+
+    def all_playlist_tracks(self) -> dict[str, list[Track]]:
+        data = _run_jxa(_ALL_PLAYLIST_TRACKS)
+        return {
+            name: [Track(r["id"], r["name"], r["artist"], r["album"]) for r in rows]
+            for name, rows in data.items()
+        }
 
     def ensure_playlist(self, name: str) -> bool:
         return bool(_run_jxa(_ENSURE_PLAYLIST, name))
@@ -77,6 +88,20 @@ function run(argv) {
         artists = tracks.artist(), albums = tracks.album();
   return JSON.stringify(ids.map((id, i) =>
     ({id: id, name: names[i], artist: artists[i], album: albums[i]})));
+}
+"""
+
+_ALL_PLAYLIST_TRACKS = """
+function run(argv) {
+  const out = {};
+  for (const p of app.userPlaylists()) {
+    const tracks = p.tracks;
+    const ids = tracks.persistentID(), names = tracks.name(),
+          artists = tracks.artist(), albums = tracks.album();
+    out[p.name()] = ids.map((id, i) =>
+      ({id: id, name: names[i], artist: artists[i], album: albums[i]}));
+  }
+  return JSON.stringify(out);
 }
 """
 
